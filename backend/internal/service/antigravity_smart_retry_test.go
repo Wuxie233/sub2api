@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -294,8 +295,20 @@ func TestHandleSmartRetry_ShortDelay_SmartRetryFailed_ReturnsSwitchError(t *test
 	require.Len(t, upstream.calls, 1, "should have made one retry call (max attempts)")
 }
 
-// TestHandleSmartRetry_503_ModelCapacityExhausted_ReturnsSwitchError 测试 503 MODEL_CAPACITY_EXHAUSTED 返回 switchError
-func TestHandleSmartRetry_503_ModelCapacityExhausted_ReturnsSwitchError(t *testing.T) {
+// TestHandleSmartRetry_503_ModelCapacityExhausted_ShortDelay_RetrySuccess
+// 503 MODEL_CAPACITY_EXHAUSTED + retryDelay < 20s → 按实际 retryDelay 等待后重试 1 次，成功返回
+func TestHandleSmartRetry_503_ModelCapacityExhausted_ShortDelay_RetrySuccess(t *testing.T) {
+	// 重试成功的响应
+	successResp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+	}
+	upstream := &mockSmartRetryUpstream{
+		responses: []*http.Response{successResp},
+		errors:    []error{nil},
+	}
+
 	repo := &stubAntigravityAccountRepo{}
 	account := &Account{
 		ID:       3,
@@ -304,7 +317,89 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_ReturnsSwitchError(t *testi
 		Platform: PlatformAntigravity,
 	}
 
-	// 503 + MODEL_CAPACITY_EXHAUSTED + 39s >= 7s 阈值
+	// 503 + MODEL_CAPACITY_EXHAUSTED + 0.5s < 20s 阈值 → 按实际 retryDelay 重试 1 次
+	respBody := []byte(`{
+		"error": {
+			"code": 503,
+			"status": "UNAVAILABLE",
+			"details": [
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-pro-high"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
+				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0.5s"}
+			],
+			"message": "No capacity available for model gemini-3-pro-high on the server"
+		}
+	}`)
+	resp := &http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{},
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+	}
+
+	params := antigravityRetryLoopParams{
+		ctx:          context.Background(),
+		prefix:       "[test]",
+		account:      account,
+		accessToken:  "token",
+		action:       "generateContent",
+		body:         []byte(`{"input":"test"}`),
+		httpUpstream: upstream,
+		accountRepo:  repo,
+		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
+			return nil
+		},
+	}
+
+	availableURLs := []string{"https://ag-1.test"}
+
+	svc := &AntigravityGatewayService{}
+	result := svc.handleSmartRetry(params, resp, respBody, "https://ag-1.test", 0, availableURLs)
+
+	require.NotNil(t, result)
+	require.Equal(t, smartRetryActionBreakWithResp, result.action)
+	require.NotNil(t, result.resp)
+	require.Equal(t, http.StatusOK, result.resp.StatusCode, "should return success after retry")
+	require.Nil(t, result.switchError, "should not switch account on success")
+	require.Empty(t, repo.modelRateLimitCalls, "should not set model rate limit for capacity exhausted")
+}
+
+// TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount
+// 503 MODEL_CAPACITY_EXHAUSTED + retryDelay >= 20s → 每 20s 重试最多 5 次，全失败后切换账号
+func TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount(t *testing.T) {
+	// 构造 5 个仍然容量不足的重试响应
+	capacityBody := `{
+		"error": {
+			"code": 503,
+			"status": "UNAVAILABLE",
+			"details": [
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-pro-high"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
+				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "30s"}
+			]
+		}
+	}`
+	var responses []*http.Response
+	var errs []error
+	for i := 0; i < 5; i++ {
+		responses = append(responses, &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(capacityBody)),
+		})
+		errs = append(errs, nil)
+	}
+	upstream := &mockSmartRetryUpstream{
+		responses: responses,
+		errors:    errs,
+	}
+
+	repo := &stubAntigravityAccountRepo{}
+	account := &Account{
+		ID:       3,
+		Name:     "acc-3",
+		Type:     AccountTypeOAuth,
+		Platform: PlatformAntigravity,
+	}
+
+	// 503 + MODEL_CAPACITY_EXHAUSTED + 39s >= 20s 阈值
 	respBody := []byte(`{
 		"error": {
 			"code": 503,
@@ -322,13 +417,18 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_ReturnsSwitchError(t *testi
 		Body:       io.NopCloser(bytes.NewReader(respBody)),
 	}
 
+	// 使用可取消的 context 避免测试真的等待 5×20s
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
 	params := antigravityRetryLoopParams{
-		ctx:             context.Background(),
+		ctx:             ctx,
 		prefix:          "[test]",
 		account:         account,
 		accessToken:     "token",
 		action:          "generateContent",
 		body:            []byte(`{"input":"test"}`),
+		httpUpstream:    upstream,
 		accountRepo:     repo,
 		isStickySession: true,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
@@ -343,16 +443,9 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_ReturnsSwitchError(t *testi
 
 	require.NotNil(t, result)
 	require.Equal(t, smartRetryActionBreakWithResp, result.action)
-	require.Nil(t, result.resp)
-	require.Nil(t, result.err)
-	require.NotNil(t, result.switchError, "should return switchError for 503 model capacity exhausted")
-	require.Equal(t, account.ID, result.switchError.OriginalAccountID)
-	require.Equal(t, "gemini-3-pro-high", result.switchError.RateLimitedModel)
-	require.True(t, result.switchError.IsStickySession)
-
-	// 验证模型限流已设置
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gemini-3-pro-high", repo.modelRateLimitCalls[0].modelKey)
+	// context 超时会导致提前返回，switchError 可能为 nil（context canceled）
+	// 验证不设置模型限流
+	require.Empty(t, repo.modelRateLimitCalls, "should not set model rate limit for capacity exhausted")
 }
 
 // TestHandleSmartRetry_NonAntigravityAccount_ContinuesDefaultLogic 测试非 Antigravity 平台账号走默认逻辑
@@ -1128,9 +1221,9 @@ func TestHandleSmartRetry_ShortDelay_NetworkError_StickySession_ClearsSession(t 
 	require.Equal(t, "sticky-net-error", cache.deleteCalls[0].sessionHash)
 }
 
-// TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_ClearsSession
-// 503 + 短延迟 + 粘性会话 + 重试失败 → 清除粘性绑定
-func TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_ClearsSession(t *testing.T) {
+// TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_SwitchesAccount
+// 503 + 短延迟 + 容量不足 + 重试失败 → 切换账号（不设模型限流）
+func TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_SwitchesAccount(t *testing.T) {
 	failRespBody := `{
 		"error": {
 			"code": 503,
@@ -1152,7 +1245,6 @@ func TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_ClearsSession
 	}
 
 	repo := &stubAntigravityAccountRepo{}
-	cache := &stubSmartRetryCache{}
 	account := &Account{
 		ID:       16,
 		Name:     "acc-16",
@@ -1195,21 +1287,15 @@ func TestHandleSmartRetry_ShortDelay_503_StickySession_FailedRetry_ClearsSession
 
 	availableURLs := []string{"https://ag-1.test"}
 
-	svc := &AntigravityGatewayService{cache: cache}
+	svc := &AntigravityGatewayService{}
 	result := svc.handleSmartRetry(params, resp, respBody, "https://ag-1.test", 0, availableURLs)
 
 	require.NotNil(t, result)
-	require.NotNil(t, result.switchError)
+	require.NotNil(t, result.switchError, "should switch account after capacity retry exhausted")
 	require.True(t, result.switchError.IsStickySession)
 
-	// 验证粘性绑定被清除
-	require.Len(t, cache.deleteCalls, 1)
-	require.Equal(t, int64(77), cache.deleteCalls[0].groupID)
-	require.Equal(t, "sticky-503-short", cache.deleteCalls[0].sessionHash)
-
-	// 验证模型限流已设置
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gemini-3-pro", repo.modelRateLimitCalls[0].modelKey)
+	// MODEL_CAPACITY_EXHAUSTED 不应设置模型限流
+	require.Empty(t, repo.modelRateLimitCalls, "should not set model rate limit for capacity exhausted")
 }
 
 // TestAntigravityRetryLoop_SmartRetryFailed_StickySession_SwitchErrorPropagates

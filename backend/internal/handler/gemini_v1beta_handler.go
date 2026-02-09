@@ -323,7 +323,6 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	maxAccountSwitches := h.maxAccountSwitchesGemini
 	switchCount := 0
-	antigravityExtraCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	var forceCacheBilling bool // 粘性会话切换时的缓存计费标记
@@ -340,15 +339,6 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID)
-
-		// 额外重试阶段：跳过非 Antigravity 账号
-		if switchCount >= maxAccountSwitches && account.Platform != service.PlatformAntigravity {
-			failedAccountIDs[account.ID] = struct{}{}
-			if selection.Acquired && selection.ReleaseFunc != nil {
-				selection.ReleaseFunc()
-			}
-			continue
-		}
 
 		// 检测账号切换：如果粘性会话绑定的账号与当前选择的账号不同，清除 thoughtSignature
 		// 注意：Gemini 原生 API 的 thoughtSignature 与具体上游账号强相关；跨账号透传会导致 400。
@@ -439,17 +429,8 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 					forceCacheBilling = true
 				}
 				if switchCount >= maxAccountSwitches {
-					// 默认重试用完，进入 Antigravity 额外重试
-					antigravityExtraCount++
-					if antigravityExtraCount > h.antigravityExtraRetries {
-						h.handleGeminiFailoverExhausted(c, failoverErr)
-						return
-					}
-					log.Printf("Gemini account %d: antigravity extra retry %d/%d", account.ID, antigravityExtraCount, h.antigravityExtraRetries)
-					if !sleepFixedDelay(c.Request.Context(), antigravityExtraRetryDelay) {
-						return
-					}
-					continue
+					h.handleGeminiFailoverExhausted(c, failoverErr)
+					return
 				}
 				switchCount++
 				log.Printf("Gemini account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
