@@ -223,6 +223,10 @@ func (m *mockGroupRepoForGemini) GetAccountIDsByGroupIDs(ctx context.Context, gr
 	return nil, nil
 }
 
+func (m *mockGroupRepoForGemini) UpdateSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
+	return nil
+}
+
 var _ GroupRepository = (*mockGroupRepoForGemini)(nil)
 
 // mockGatewayCacheForGemini Gemini 测试用的 cache mock
@@ -261,7 +265,6 @@ func (m *mockGatewayCacheForGemini) DeleteSessionAccountID(ctx context.Context, 
 	delete(m.sessionBindings, sessionHash)
 	return nil
 }
-
 
 // TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform 测试 Gemini 单平台选择
 func TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform(t *testing.T) {

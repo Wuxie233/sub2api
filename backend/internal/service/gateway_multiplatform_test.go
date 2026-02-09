@@ -213,7 +213,6 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	return nil
 }
 
-
 type mockGroupRepoForGateway struct {
 	groups           map[int64]*Group
 	getByIDCalls     int
@@ -270,6 +269,10 @@ func (m *mockGroupRepoForGateway) BindAccountsToGroup(ctx context.Context, group
 
 func (m *mockGroupRepoForGateway) GetAccountIDsByGroupIDs(ctx context.Context, groupIDs []int64) ([]int64, error) {
 	return nil, nil
+}
+
+func (m *mockGroupRepoForGateway) UpdateSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
+	return nil
 }
 
 func ptr[T any](v T) *T {
