@@ -363,9 +363,9 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_ShortDelay_RetrySuccess(t *
 }
 
 // TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount
-// 503 MODEL_CAPACITY_EXHAUSTED + retryDelay >= 20s → 每 20s 重试最多 5 次，全失败后切换账号
+// 503 MODEL_CAPACITY_EXHAUSTED + retryDelay >= 20s → 等待 20s 后重试 1 次，仍失败则切换账号
 func TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount(t *testing.T) {
-	// 构造 5 个仍然容量不足的重试响应
+	// 重试仍然返回容量不足
 	capacityBody := `{
 		"error": {
 			"code": 503,
@@ -376,19 +376,15 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount(t *
 			]
 		}
 	}`
-	var responses []*http.Response
-	var errs []error
-	for i := 0; i < 5; i++ {
-		responses = append(responses, &http.Response{
-			StatusCode: http.StatusServiceUnavailable,
-			Header:     http.Header{},
-			Body:       io.NopCloser(strings.NewReader(capacityBody)),
-		})
-		errs = append(errs, nil)
-	}
 	upstream := &mockSmartRetryUpstream{
-		responses: responses,
-		errors:    errs,
+		responses: []*http.Response{
+			{
+				StatusCode: 503,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(capacityBody)),
+			},
+		},
+		errors: []error{nil},
 	}
 
 	repo := &stubAntigravityAccountRepo{}
@@ -412,12 +408,12 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount(t *
 		}
 	}`)
 	resp := &http.Response{
-		StatusCode: http.StatusServiceUnavailable,
+		StatusCode: 503,
 		Header:     http.Header{},
 		Body:       io.NopCloser(bytes.NewReader(respBody)),
 	}
 
-	// 使用可取消的 context 避免测试真的等待 5×20s
+	// context 超时短于 20s 等待，验证 context 取消时正确返回
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -443,8 +439,7 @@ func TestHandleSmartRetry_503_ModelCapacityExhausted_LongDelay_SwitchAccount(t *
 
 	require.NotNil(t, result)
 	require.Equal(t, smartRetryActionBreakWithResp, result.action)
-	// context 超时会导致提前返回，switchError 可能为 nil（context canceled）
-	// 验证不设置模型限流
+	// context 超时会导致提前返回
 	require.Empty(t, repo.modelRateLimitCalls, "should not set model rate limit for capacity exhausted")
 }
 
