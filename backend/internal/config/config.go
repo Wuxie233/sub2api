@@ -279,9 +279,6 @@ type GatewayConfig struct {
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`
 
-	// 默认重试用完后，额外使用 Antigravity 账号重试的最大次数（0 表示禁用）
-	AntigravityExtraRetries int `mapstructure:"antigravity_extra_retries"`
-
 	// Scheduling: 账号调度相关配置
 	Scheduling GatewaySchedulingConfig `mapstructure:"scheduling"`
 

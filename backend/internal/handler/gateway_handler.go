@@ -39,7 +39,6 @@ type GatewayHandler struct {
 	concurrencyHelper         *ConcurrencyHelper
 	maxAccountSwitches        int
 	maxAccountSwitchesGemini  int
-	antigravityExtraRetries   int
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -58,7 +57,6 @@ func NewGatewayHandler(
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 10
 	maxAccountSwitchesGemini := 3
-	antigravityExtraRetries := 10
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
 		if cfg.Gateway.MaxAccountSwitches > 0 {
@@ -67,7 +65,6 @@ func NewGatewayHandler(
 		if cfg.Gateway.MaxAccountSwitchesGemini > 0 {
 			maxAccountSwitchesGemini = cfg.Gateway.MaxAccountSwitchesGemini
 		}
-		antigravityExtraRetries = cfg.Gateway.AntigravityExtraRetries
 	}
 	return &GatewayHandler{
 		gatewayService:            gatewayService,
@@ -81,7 +78,6 @@ func NewGatewayHandler(
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
 		maxAccountSwitches:        maxAccountSwitches,
 		maxAccountSwitchesGemini:  maxAccountSwitchesGemini,
-		antigravityExtraRetries:   antigravityExtraRetries,
 	}
 }
 
@@ -238,8 +234,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	if platform == service.PlatformGemini {
 		maxAccountSwitches := h.maxAccountSwitchesGemini
 		switchCount := 0
-		antigravityExtraCount := 0
 		failedAccountIDs := make(map[int64]struct{})
+		sameAccountRetryCount := make(map[int64]int) // 同账号重试计数
 		var lastFailoverErr *service.UpstreamFailoverError
 		var forceCacheBilling bool // 粘性会话切换时的缓存计费标记
 
@@ -259,15 +255,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID)
-
-			// 额外重试阶段：跳过非 Antigravity 账号
-			if switchCount >= maxAccountSwitches && account.Platform != service.PlatformAntigravity {
-				failedAccountIDs[account.ID] = struct{}{}
-				if selection.Acquired && selection.ReleaseFunc != nil {
-					selection.ReleaseFunc()
-				}
-				continue
-			}
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -353,23 +340,31 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if err != nil {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if needForceCacheBilling(hasBoundSession, failoverErr) {
 						forceCacheBilling = true
 					}
-					if switchCount >= maxAccountSwitches {
-						// 默认重试用完，进入 Antigravity 额外重试
-						antigravityExtraCount++
-						if antigravityExtraCount > h.antigravityExtraRetries {
-							h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, streamStarted)
-							return
-						}
-						log.Printf("Account %d: antigravity extra retry %d/%d", account.ID, antigravityExtraCount, h.antigravityExtraRetries)
-						if !sleepFixedDelay(c.Request.Context(), antigravityExtraRetryDelay) {
+
+					// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试
+					if failoverErr.RetryableOnSameAccount && sameAccountRetryCount[account.ID] < maxSameAccountRetries {
+						sameAccountRetryCount[account.ID]++
+						log.Printf("Account %d: retryable error %d, same-account retry %d/%d",
+							account.ID, failoverErr.StatusCode, sameAccountRetryCount[account.ID], maxSameAccountRetries)
+						if !sleepSameAccountRetryDelay(c.Request.Context()) {
 							return
 						}
 						continue
+					}
+
+					// 同账号重试用尽，执行临时封禁并切换账号
+					if failoverErr.RetryableOnSameAccount {
+						h.gatewayService.TempUnscheduleRetryableError(c.Request.Context(), account.ID, failoverErr)
+					}
+
+					failedAccountIDs[account.ID] = struct{}{}
+					if switchCount >= maxAccountSwitches {
+						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, streamStarted)
+						return
 					}
 					switchCount++
 					log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
@@ -422,8 +417,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	for {
 		maxAccountSwitches := h.maxAccountSwitches
 		switchCount := 0
-		antigravityExtraCount := 0
 		failedAccountIDs := make(map[int64]struct{})
+		sameAccountRetryCount := make(map[int64]int) // 同账号重试计数
 		var lastFailoverErr *service.UpstreamFailoverError
 		retryWithFallback := false
 		var forceCacheBilling bool // 粘性会话切换时的缓存计费标记
@@ -445,15 +440,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID)
-
-			// 额外重试阶段：跳过非 Antigravity 账号
-			if switchCount >= maxAccountSwitches && account.Platform != service.PlatformAntigravity {
-				failedAccountIDs[account.ID] = struct{}{}
-				if selection.Acquired && selection.ReleaseFunc != nil {
-					selection.ReleaseFunc()
-				}
-				continue
-			}
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -572,23 +558,31 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if needForceCacheBilling(hasBoundSession, failoverErr) {
 						forceCacheBilling = true
 					}
-					if switchCount >= maxAccountSwitches {
-						// 默认重试用完，进入 Antigravity 额外重试
-						antigravityExtraCount++
-						if antigravityExtraCount > h.antigravityExtraRetries {
-							h.handleFailoverExhausted(c, failoverErr, account.Platform, streamStarted)
-							return
-						}
-						log.Printf("Account %d: antigravity extra retry %d/%d", account.ID, antigravityExtraCount, h.antigravityExtraRetries)
-						if !sleepFixedDelay(c.Request.Context(), antigravityExtraRetryDelay) {
+
+					// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试
+					if failoverErr.RetryableOnSameAccount && sameAccountRetryCount[account.ID] < maxSameAccountRetries {
+						sameAccountRetryCount[account.ID]++
+						log.Printf("Account %d: retryable error %d, same-account retry %d/%d",
+							account.ID, failoverErr.StatusCode, sameAccountRetryCount[account.ID], maxSameAccountRetries)
+						if !sleepSameAccountRetryDelay(c.Request.Context()) {
 							return
 						}
 						continue
+					}
+
+					// 同账号重试用尽，执行临时封禁并切换账号
+					if failoverErr.RetryableOnSameAccount {
+						h.gatewayService.TempUnscheduleRetryableError(c.Request.Context(), account.ID, failoverErr)
+					}
+
+					failedAccountIDs[account.ID] = struct{}{}
+					if switchCount >= maxAccountSwitches {
+						h.handleFailoverExhausted(c, failoverErr, account.Platform, streamStarted)
+						return
 					}
 					switchCount++
 					log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
@@ -865,25 +859,27 @@ func needForceCacheBilling(hasBoundSession bool, failoverErr *service.UpstreamFa
 	return hasBoundSession || (failoverErr != nil && failoverErr.ForceCacheBilling)
 }
 
-// sleepFailoverDelay 账号切换线性递增延时：第1次0s、第2次1s、第3次2s…
-// 返回 false 表示 context 已取消。
-func sleepFailoverDelay(ctx context.Context, switchCount int) bool {
-	delay := time.Duration(switchCount-1) * time.Second
-	if delay <= 0 {
-		return true
-	}
+const (
+	// maxSameAccountRetries 同账号重试次数上限（针对 RetryableOnSameAccount 错误）
+	maxSameAccountRetries = 2
+	// sameAccountRetryDelay 同账号重试间隔
+	sameAccountRetryDelay = 500 * time.Millisecond
+)
+
+// sleepSameAccountRetryDelay 同账号重试固定延时，返回 false 表示 context 已取消。
+func sleepSameAccountRetryDelay(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():
 		return false
-	case <-time.After(delay):
+	case <-time.After(sameAccountRetryDelay):
 		return true
 	}
 }
 
-const antigravityExtraRetryDelay = 500 * time.Millisecond
-
-// sleepFixedDelay 固定延时等待，返回 false 表示 context 已取消。
-func sleepFixedDelay(ctx context.Context, delay time.Duration) bool {
+// sleepFailoverDelay 账号切换线性递增延时：第1次0s、第2次1s、第3次2s…
+// 返回 false 表示 context 已取消。
+func sleepFailoverDelay(ctx context.Context, switchCount int) bool {
+	delay := time.Duration(switchCount-1) * time.Second
 	if delay <= 0 {
 		return true
 	}
