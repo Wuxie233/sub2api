@@ -265,7 +265,7 @@ async function loadData() {
   try {
     if (showByUser.value) {
       // 用户视图模式只加载用户并发数据
-      const userData = await opsAPI.getUserConcurrencyStats()
+      const userData = await opsAPI.getUserConcurrencyStats(props.platformFilter, props.groupIdFilter)
       userConcurrency.value = userData
     } else {
       // 常规模式加载账号/平台/分组数据
@@ -296,6 +296,14 @@ watch(
 // 切换用户视图时重新加载数据
 watch(
   () => showByUser.value,
+  () => {
+    loadData()
+  }
+)
+
+// 过滤条件变化时重新加载数据
+watch(
+  [() => props.platformFilter, () => props.groupIdFilter],
   () => {
     loadData()
   }

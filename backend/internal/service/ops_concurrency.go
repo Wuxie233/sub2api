@@ -344,8 +344,16 @@ func (s *OpsService) getUsersLoadMapBestEffort(ctx context.Context, users []User
 	return out
 }
 
-// GetUserConcurrencyStats returns real-time concurrency usage for all active users.
-func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*UserConcurrencyInfo, *time.Time, error) {
+// GetUserConcurrencyStats returns real-time concurrency usage for active users.
+//
+// Optional filters:
+// - platformFilter: only include users who have access to groups belonging to that platform
+// - groupIDFilter: only include users who have access to that specific group
+func (s *OpsService) GetUserConcurrencyStats(
+	ctx context.Context,
+	platformFilter string,
+	groupIDFilter *int64,
+) (map[int64]*UserConcurrencyInfo, *time.Time, error) {
 	if err := s.RequireMonitoringEnabled(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -355,6 +363,15 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 		return nil, nil, err
 	}
 
+	// Build a set of allowed group IDs when filtering is requested.
+	var allowedGroupIDs map[int64]struct{}
+	if platformFilter != "" || (groupIDFilter != nil && *groupIDFilter > 0) {
+		allowedGroupIDs, err = s.buildAllowedGroupIDsForFilter(ctx, platformFilter, groupIDFilter)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	collectedAt := time.Now()
 	loadMap := s.getUsersLoadMapBestEffort(ctx, users)
 
@@ -362,6 +379,12 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 
 	for _, u := range users {
 		if u.ID <= 0 {
+			continue
+		}
+
+		// Apply group/platform filter: skip users whose AllowedGroups
+		// have no intersection with the matching group IDs.
+		if allowedGroupIDs != nil && !userMatchesGroupFilter(u.AllowedGroups, allowedGroupIDs) {
 			continue
 		}
 
@@ -393,4 +416,47 @@ func (s *OpsService) GetUserConcurrencyStats(ctx context.Context) (map[int64]*Us
 	}
 
 	return result, &collectedAt, nil
+}
+
+// buildAllowedGroupIDsForFilter returns the set of group IDs that match the given
+// platform and/or group ID filter. It reuses listAllAccountsForOps (which already
+// supports platform filtering at the DB level) to collect group IDs from accounts.
+func (s *OpsService) buildAllowedGroupIDsForFilter(ctx context.Context, platformFilter string, groupIDFilter *int64) (map[int64]struct{}, error) {
+	// Fast path: only group ID filter, no platform filter needed.
+	if platformFilter == "" && groupIDFilter != nil && *groupIDFilter > 0 {
+		return map[int64]struct{}{*groupIDFilter: {}}, nil
+	}
+
+	// Use the same account-based approach as GetConcurrencyStats to collect group IDs.
+	accounts, err := s.listAllAccountsForOps(ctx, platformFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	groupIDs := make(map[int64]struct{})
+	for _, acc := range accounts {
+		for _, grp := range acc.Groups {
+			if grp == nil || grp.ID <= 0 {
+				continue
+			}
+			// If groupIDFilter is set, only include that specific group.
+			if groupIDFilter != nil && *groupIDFilter > 0 && grp.ID != *groupIDFilter {
+				continue
+			}
+			groupIDs[grp.ID] = struct{}{}
+		}
+	}
+
+	return groupIDs, nil
+}
+
+// userMatchesGroupFilter returns true if the user's AllowedGroups contains
+// at least one group ID in the allowed set.
+func userMatchesGroupFilter(userGroups []int64, allowedGroupIDs map[int64]struct{}) bool {
+	for _, gid := range userGroups {
+		if _, ok := allowedGroupIDs[gid]; ok {
+			return true
+		}
+	}
+	return false
 }
