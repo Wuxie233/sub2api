@@ -142,46 +142,25 @@ func TestHandleSmartRetry_503_LongDelay_SingleAccountRetry_RetryInPlace(t *testi
 }
 
 // TestHandleSmartRetry_503_LongDelay_NoSingleAccountRetry_StillSwitches
-// 对照组：503 + retryDelay >= 7s + 无 SingleAccountRetry 标记 + MODEL_CAPACITY_EXHAUSTED
-// → 走 handleModelCapacityExhaustedRetry：等待后重试 1 次，重试仍失败则切换账号
+// 对照组：503 + retryDelay >= 7s + 无 SingleAccountRetry 标记
+// → 照常设模型限流 + 切换账号
 func TestHandleSmartRetry_503_LongDelay_NoSingleAccountRetry_StillSwitches(t *testing.T) {
-	// 重试也返回 503 + MODEL_CAPACITY_EXHAUSTED，触发切换账号
-	retryRespBody := `{
-		"error": {
-			"code": 503,
-			"status": "UNAVAILABLE",
-			"details": [
-				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-pro-high"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
-				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "39s"}
-			]
-		}
-	}`
-	retryResp := &http.Response{
-		StatusCode: http.StatusServiceUnavailable,
-		Header:     http.Header{},
-		Body:       io.NopCloser(strings.NewReader(retryRespBody)),
-	}
-	upstream := &mockSmartRetryUpstream{
-		responses: []*http.Response{retryResp},
-		errors:    []error{nil},
-	}
-
 	repo := &stubAntigravityAccountRepo{}
 	account := &Account{
-		ID:          2,
-		Name:        "acc-multi",
-		Type:        AccountTypeOAuth,
-		Platform:    PlatformAntigravity,
-		Concurrency: 1,
+		ID:       2,
+		Name:     "acc-multi",
+		Type:     AccountTypeOAuth,
+		Platform: PlatformAntigravity,
 	}
 
-	// 503 + 39s >= 7s 阈值
+	// 503 + 39s >= 7s 阈值（使用 RATE_LIMIT_EXCEEDED 而非 MODEL_CAPACITY_EXHAUSTED，
+	// 因为 MODEL_CAPACITY_EXHAUSTED 走独立的重试路径，不触发 shouldRateLimitModel）
 	respBody := []byte(`{
 		"error": {
 			"code": 503,
-			"status": "UNAVAILABLE",
+			"status": "RESOURCE_EXHAUSTED",
 			"details": [
-				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-pro-high"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-pro-high"}, "reason": "RATE_LIMIT_EXCEEDED"},
 				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "39s"}
 			]
 		}
@@ -193,14 +172,13 @@ func TestHandleSmartRetry_503_LongDelay_NoSingleAccountRetry_StillSwitches(t *te
 	}
 
 	params := antigravityRetryLoopParams{
-		ctx:          context.Background(), // 关键：无单账号标记
-		prefix:       "[test]",
-		account:      account,
-		accessToken:  "token",
-		action:       "generateContent",
-		body:         []byte(`{"input":"test"}`),
-		httpUpstream: upstream,
-		accountRepo:  repo,
+		ctx:         context.Background(), // 关键：无单账号标记
+		prefix:      "[test]",
+		account:     account,
+		accessToken: "token",
+		action:      "generateContent",
+		body:        []byte(`{"input":"test"}`),
+		accountRepo: repo,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
 			return nil
 		},
@@ -213,12 +191,13 @@ func TestHandleSmartRetry_503_LongDelay_NoSingleAccountRetry_StillSwitches(t *te
 
 	require.NotNil(t, result)
 	require.Equal(t, smartRetryActionBreakWithResp, result.action)
-	// MODEL_CAPACITY_EXHAUSTED 重试仍失败 → 切换账号
-	require.NotNil(t, result.switchError, "should return switchError after capacity retry fails")
+	// 对照：多账号模式返回 switchError
+	require.NotNil(t, result.switchError, "multi-account mode should return switchError for 503")
 	require.Nil(t, result.resp, "should not return resp when switchError is set")
 
-	// 验证做了一次重试
-	require.Len(t, upstream.calls, 1, "should have made one capacity retry attempt")
+	// 对照：多账号模式应设模型限流
+	require.Len(t, repo.modelRateLimitCalls, 1,
+		"multi-account mode SHOULD set model rate limit")
 }
 
 // TestHandleSmartRetry_429_LongDelay_SingleAccountRetry_StillSwitches
@@ -276,15 +255,13 @@ func TestHandleSmartRetry_429_LongDelay_SingleAccountRetry_StillSwitches(t *test
 }
 
 // ---------------------------------------------------------------------------
-// 4. handleSmartRetry + 503 + 短延迟 + MODEL_CAPACITY_EXHAUSTED
-//    不论单账号/多账号，都走 handleModelCapacityExhaustedRetry
+// 4. handleSmartRetry + 503 + 短延迟 + SingleAccountRetry → 智能重试耗尽后不设限流
 // ---------------------------------------------------------------------------
 
 // TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit
-// 503 + retryDelay < 7s + SingleAccountRetry + MODEL_CAPACITY_EXHAUSTED
-// → 走 handleModelCapacityExhaustedRetry，重试失败后切换账号，不设限流
+// 503 + retryDelay < 7s + SingleAccountRetry → 智能重试耗尽后直接返回 503，不设限流
 func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testing.T) {
-	// 重试也返回 503 + MODEL_CAPACITY_EXHAUSTED
+	// 智能重试也返回 503
 	failRespBody := `{
 		"error": {
 			"code": 503,
@@ -307,11 +284,10 @@ func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testi
 
 	repo := &stubAntigravityAccountRepo{}
 	account := &Account{
-		ID:          4,
-		Name:        "acc-short-503",
-		Type:        AccountTypeOAuth,
-		Platform:    PlatformAntigravity,
-		Concurrency: 1,
+		ID:       4,
+		Name:     "acc-short-503",
+		Type:     AccountTypeOAuth,
+		Platform: PlatformAntigravity,
 	}
 
 	// 0.1s < 7s 阈值
@@ -352,57 +328,54 @@ func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testi
 
 	require.NotNil(t, result)
 	require.Equal(t, smartRetryActionBreakWithResp, result.action)
-	// MODEL_CAPACITY_EXHAUSTED 重试失败 → 切换账号
-	require.NotNil(t, result.switchError, "should return switchError after capacity retry fails")
+	// 关键断言：单账号 503 模式下，智能重试耗尽后直接返回 503 响应，不切换
+	require.NotNil(t, result.resp, "should return 503 response directly for single account mode")
+	require.Equal(t, http.StatusServiceUnavailable, result.resp.StatusCode)
+	require.Nil(t, result.switchError, "should NOT switch account in single account mode")
 
-	// 关键断言：不设模型限流（capacity exhausted 不设限流）
+	// 关键断言：不设模型限流
 	require.Len(t, repo.modelRateLimitCalls, 0,
-		"should NOT set model rate limit for MODEL_CAPACITY_EXHAUSTED")
-
-	// 验证做了一次重试
-	require.Len(t, upstream.calls, 1, "should have made one capacity retry attempt")
+		"should NOT set model rate limit for 503 in single account mode")
 }
 
 // TestHandleSmartRetry_503_ShortDelay_NoSingleAccountRetry_SetsRateLimit
-// 对照组：503 + retryDelay < 7s + 无 SingleAccountRetry + MODEL_CAPACITY_EXHAUSTED
-// → 走 handleModelCapacityExhaustedRetry，重试仍失败则切换账号
+// 对照组：503 + retryDelay < 7s + 无 SingleAccountRetry → 智能重试耗尽后照常设限流
+// 使用 RATE_LIMIT_EXCEEDED 而非 MODEL_CAPACITY_EXHAUSTED，因为后者走独立的 60 次重试路径
 func TestHandleSmartRetry_503_ShortDelay_NoSingleAccountRetry_SetsRateLimit(t *testing.T) {
-	// 重试也返回 503 + MODEL_CAPACITY_EXHAUSTED
-	retryRespBody := `{
+	failRespBody := `{
 		"error": {
 			"code": 503,
-			"status": "UNAVAILABLE",
+			"status": "RESOURCE_EXHAUSTED",
 			"details": [
-				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-flash"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-flash"}, "reason": "RATE_LIMIT_EXCEEDED"},
 				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0.1s"}
 			]
 		}
 	}`
-	retryResp := &http.Response{
+	failResp := &http.Response{
 		StatusCode: http.StatusServiceUnavailable,
 		Header:     http.Header{},
-		Body:       io.NopCloser(strings.NewReader(retryRespBody)),
+		Body:       io.NopCloser(strings.NewReader(failRespBody)),
 	}
 	upstream := &mockSmartRetryUpstream{
-		responses: []*http.Response{retryResp},
+		responses: []*http.Response{failResp},
 		errors:    []error{nil},
 	}
 
 	repo := &stubAntigravityAccountRepo{}
 	account := &Account{
-		ID:          5,
-		Name:        "acc-multi-503",
-		Type:        AccountTypeOAuth,
-		Platform:    PlatformAntigravity,
-		Concurrency: 1,
+		ID:       5,
+		Name:     "acc-multi-503",
+		Type:     AccountTypeOAuth,
+		Platform: PlatformAntigravity,
 	}
 
 	respBody := []byte(`{
 		"error": {
 			"code": 503,
-			"status": "UNAVAILABLE",
+			"status": "RESOURCE_EXHAUSTED",
 			"details": [
-				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-flash"}, "reason": "MODEL_CAPACITY_EXHAUSTED"},
+				{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "metadata": {"model": "gemini-3-flash"}, "reason": "RATE_LIMIT_EXCEEDED"},
 				{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0.1s"}
 			]
 		}
@@ -434,15 +407,11 @@ func TestHandleSmartRetry_503_ShortDelay_NoSingleAccountRetry_SetsRateLimit(t *t
 
 	require.NotNil(t, result)
 	require.Equal(t, smartRetryActionBreakWithResp, result.action)
-	// MODEL_CAPACITY_EXHAUSTED 重试仍失败 → 切换账号
-	require.NotNil(t, result.switchError, "should return switchError after capacity retry fails")
-
-	// handleModelCapacityExhaustedRetry 不设模型限流（容量不足是全局状态，不适合限流单个模型）
-	require.Len(t, repo.modelRateLimitCalls, 0,
-		"handleModelCapacityExhaustedRetry should NOT set model rate limit")
-
-	// 验证做了一次重试
-	require.Len(t, upstream.calls, 1, "should have made one capacity retry attempt")
+	// 对照：多账号模式应返回 switchError
+	require.NotNil(t, result.switchError, "multi-account mode should return switchError for 503")
+	// 对照：多账号模式应设模型限流
+	require.Len(t, repo.modelRateLimitCalls, 1,
+		"multi-account mode should set model rate limit")
 }
 
 // ---------------------------------------------------------------------------
