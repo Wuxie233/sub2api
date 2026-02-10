@@ -354,9 +354,10 @@ func TestHandleFailoverError_SameAccountRetry(t *testing.T) {
 		err := newTestFailoverErr(400, true, false)
 
 		// 耗尽账号 100 的重试
-		fs.HandleFailoverError(context.Background(), mock, 100, "openai", err) // retry 1
-		fs.HandleFailoverError(context.Background(), mock, 100, "openai", err) // retry 2
-		action := fs.HandleFailoverError(context.Background(), mock, 100, "openai", err) // exhausted → switch
+		fs.HandleFailoverError(context.Background(), mock, 100, "openai", err)
+		fs.HandleFailoverError(context.Background(), mock, 100, "openai", err)
+		// 第三次: 重试耗尽 → 切换
+		action := fs.HandleFailoverError(context.Background(), mock, 100, "openai", err)
 		require.Equal(t, FailoverSwitch, action)
 
 		// 再次遇到账号 100，计数仍为 2，条件不满足 → 直接切换
