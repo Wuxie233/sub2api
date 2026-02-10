@@ -148,9 +148,9 @@ ssh clicodeplus "source /root/sub2api-beta/deploy/.env && PGPASSWORD=\"\$POSTGRE
 
 **重要：每次部署都必须递增版本号！**
 
-#### 0. 递增版本号（本地操作）
+#### 0. 递增版本号并推送（本地操作）
 
-每次部署前，先在本地递增小版本号：
+每次部署前，先在本地递增小版本号并确保推送成功：
 
 ```bash
 # 查看当前版本号
@@ -162,30 +162,52 @@ echo "0.1.69.2" > backend/cmd/server/VERSION
 git add backend/cmd/server/VERSION
 git commit -m "chore: bump version to 0.1.69.2"
 git push origin release/custom-0.1.69
+
+# ⚠️ 确认推送成功（必须看到分支更新输出，不能有 rejected 错误）
 ```
+
+> **检查点**：如果有其他未提交的改动，应先 commit 并 push，确保 release 分支上的所有代码都已推送到远程。
 
 #### 1. 构建服务器拉取代码
 
 ```bash
-ssh us-asaki-root "cd /root/sub2api && git fetch fork && git checkout -B release/custom-0.1.69 fork/release/custom-0.1.69"
+# 拉取最新代码并切换分支
+ssh us-asaki-root "cd /root/sub2api && git fetch origin && git checkout -B release/custom-0.1.69 origin/release/custom-0.1.69"
+
+# ⚠️ 验证版本号与步骤 0 一致
+ssh us-asaki-root "cat /root/sub2api/backend/cmd/server/VERSION"
 ```
+
+> **首次使用构建服务器？** 需要先初始化仓库，参见下方「构建服务器首次初始化」章节。
 
 #### 2. 构建服务器构建镜像
 
 ```bash
 ssh us-asaki-root "cd /root/sub2api && docker build --no-cache -t sub2api:latest -f Dockerfile ."
+
+# ⚠️ 必须看到构建成功输出，如果失败需要先排查问题
 ```
+
+> **常见构建问题**：
+> - `buildx` 版本过旧导致 API 版本不兼容 → 更新 buildx：`curl -fsSL "https://github.com/docker/buildx/releases/latest/download/buildx-$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep tag_name | cut -d'"' -f4).linux-amd64" -o ~/.docker/cli-plugins/docker-buildx && chmod +x ~/.docker/cli-plugins/docker-buildx`
+> - 磁盘空间不足 → `docker system prune -f` 清理无用镜像
 
 #### 3. 传输镜像到生产服务器并加载
 
 ```bash
 # 导出镜像 → 通过管道传输 → 生产服务器加载
 ssh us-asaki-root "docker save sub2api:latest" | ssh clicodeplus "docker load"
+
+# ⚠️ 必须看到 "Loaded image: sub2api:latest" 输出
 ```
 
-#### 4. 更新镜像标签并重启服务
+#### 4. 生产服务器同步代码、更新标签并重启
 
 ```bash
+# 同步代码（用于版本号确认和 deploy 配置）
+ssh clicodeplus "cd /root/sub2api && git fetch fork && git checkout -B release/custom-0.1.69 fork/release/custom-0.1.69"
+
+# 更新镜像标签并重启
 ssh clicodeplus "docker tag sub2api:latest weishaw/sub2api:latest"
 ssh clicodeplus "cd /root/sub2api/deploy && docker compose up -d --force-recreate sub2api"
 ```
@@ -199,8 +221,35 @@ ssh clicodeplus "docker logs sub2api --tail 20"
 # 确认版本号（必须与步骤 0 中设置的版本号一致）
 ssh clicodeplus "cat /root/sub2api/backend/cmd/server/VERSION"
 
-# 检查容器状态
+# 检查容器状态（必须显示 healthy）
 ssh clicodeplus "docker ps | grep sub2api"
+```
+
+---
+
+### 构建服务器首次初始化
+
+首次使用 `us-asaki-root` 作为构建服务器时，需要执行以下一次性操作：
+
+```bash
+ssh us-asaki-root
+
+# 1) 克隆仓库
+cd /root
+git clone https://github.com/touwaeriol/sub2api.git sub2api
+cd sub2api
+
+# 2) 验证 Docker 和 buildx 版本
+docker version
+docker buildx version
+# 如果 buildx 版本过旧（< v0.14），执行更新：
+# LATEST=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep tag_name | cut -d'"' -f4)
+# curl -fsSL "https://github.com/docker/buildx/releases/download/${LATEST}/buildx-${LATEST}.linux-amd64" -o ~/.docker/cli-plugins/docker-buildx
+# chmod +x ~/.docker/cli-plugins/docker-buildx
+
+# 3) 验证构建能力
+docker build --no-cache -t sub2api:test -f Dockerfile .
+docker rmi sub2api:test
 ```
 
 ---
