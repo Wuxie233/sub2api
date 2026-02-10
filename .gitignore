@@ -131,3 +131,8 @@ deploy/docker-compose.override.yml
 vite.config.js
 docs/*
 .serena/
+
+# ===================
+# 压测工具
+# ===================
+tools/loadtest/

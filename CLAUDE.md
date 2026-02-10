@@ -109,20 +109,42 @@ git push origin main
 |--------|----------|------|
 | 构建服务器 | `us-asaki-root` | 拉取代码、`docker build` 构建镜像 |
 | 生产服务器 | `clicodeplus` | 加载镜像、运行服务、部署验证 |
+| 数据库服务器 | `db-clicodeplus` | PostgreSQL 16 + Redis 7，所有环境共用 |
+
+> 数据库服务器运维手册：`db-clicodeplus:/root/README.md`
 
 ### 部署环境说明
 
-| 环境 | 目录（生产服务器） | 端口 | 数据库 | 容器名 |
-|------|------|------|--------|--------|
-| 正式 | `/root/sub2api` | 8080 | `sub2api` | `sub2api` |
-| Beta | `/root/sub2api-beta` | 8084 | `beta` | `sub2api-beta` |
+| 环境 | 目录（生产服务器） | 端口 | 数据库 | Redis DB | 容器名 |
+|------|------|------|--------|----------|--------|
+| 正式 | `/root/sub2api` | 8080 | `sub2api` | 0 | `sub2api` |
+| Beta | `/root/sub2api-beta` | 8084 | `beta` | 2 | `sub2api-beta` |
+| OpenAI | `/root/sub2api-openai` | 8083 | `openai` | 3 | `sub2api-openai` |
 
-### 外部数据库
+### 外部数据库与 Redis
 
-正式和 Beta 环境**共用外部 PostgreSQL 数据库**（非容器内数据库），配置在 `.env` 文件中：
-- `DATABASE_HOST`：外部数据库地址
-- `DATABASE_SSLMODE`：SSL 模式（通常为 `require`）
-- `POSTGRES_USER` / `POSTGRES_DB`：用户名和数据库名
+所有环境（正式、Beta、OpenAI）共用 `db.clicodeplus.com` 上的 **PostgreSQL 16** 和 **Redis 7**，不使用容器内数据库或 Redis。
+
+**PostgreSQL**（端口 5432，TLS 加密，scram-sha-256 认证）：
+
+| 环境 | 用户名 | 数据库 |
+|------|--------|--------|
+| 正式 | `sub2api` | `sub2api` |
+| Beta | `beta` | `beta` |
+| OpenAI | `openai` | `openai` |
+
+**Redis**（端口 6379，密码认证）：
+
+| 环境 | DB |
+|------|-----|
+| 正式 | 0 |
+| Beta | 2 |
+| OpenAI | 3 |
+
+**配置方式**：
+- 数据库通过 `.env` 中的 `DATABASE_HOST`、`DATABASE_SSLMODE`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB` 配置
+- Redis 通过 `docker-compose.override.yml` 覆盖 `REDIS_HOST`（因主 compose 文件硬编码为 `redis`），密码通过 `.env` 中的 `REDIS_PASSWORD` 配置
+- 各环境的 `docker-compose.override.yml` 已通过 `depends_on: !reset {}` 和 `redis: profiles: [disabled]` 去掉了对容器 Redis 的依赖
 
 #### 数据库操作命令
 
@@ -311,14 +333,20 @@ perl -pi -e 's/^SERVER_PORT=.*/SERVER_PORT=8084/' ./.env
 perl -pi -e 's/^POSTGRES_USER=.*/POSTGRES_USER=beta/' ./.env
 perl -pi -e 's/^POSTGRES_DB=.*/POSTGRES_DB=beta/' ./.env
 
-# 5) 写 compose override（避免与现网容器名冲突，镜像使用构建服务器传输的 sub2api:beta）
+# 5) 写 compose override（避免与现网容器名冲突，镜像使用构建服务器传输的 sub2api:beta，Redis 使用外部服务）
 cat > docker-compose.override.yml <<'YAML'
 services:
   sub2api:
     image: sub2api:beta
     container_name: sub2api-beta
+    environment:
+      - DATABASE_HOST=${DATABASE_HOST:-postgres}
+      - DATABASE_SSLMODE=${DATABASE_SSLMODE:-disable}
+      - REDIS_HOST=db.clicodeplus.com
+    depends_on: !reset {}
   redis:
-    container_name: sub2api-beta-redis
+    profiles:
+      - disabled
 YAML
 
 # 6) 启动 beta（独立 project，确保不影响现网）
@@ -332,10 +360,11 @@ docker logs sub2api-beta --tail 50
 
 ### 数据库配置约定（beta）
 
-- 数据库地址/SSL/密码：与现网一致（从现网 `.env` 复制即可）。
+- 数据库地址/SSL/密码：与现网一致（从现网 `.env` 复制即可），均指向 `db.clicodeplus.com`。
 - 仅修改：
   - `POSTGRES_USER=beta`
   - `POSTGRES_DB=beta`
+  - `REDIS_DB=2`
 
 注意：需要数据库侧已存在 `beta` 用户与 `beta` 数据库，并授予权限；否则容器会启动失败并不断重启。
 
@@ -415,7 +444,19 @@ git checkout -B release/custom-0.1.69 fork/release/custom-0.1.69
 # 配置环境变量
 cd deploy
 cp .env.example .env
-vim .env  # 配置 DATABASE_URL, REDIS_URL, JWT_SECRET 等
+vim .env  # 配置 DATABASE_HOST=db.clicodeplus.com, POSTGRES_PASSWORD, REDIS_PASSWORD, JWT_SECRET 等
+
+# 创建 override 文件（Redis 指向外部服务，去掉容器 Redis 依赖）
+cat > docker-compose.override.yml <<'YAML'
+services:
+  sub2api:
+    environment:
+      - REDIS_HOST=db.clicodeplus.com
+    depends_on: !reset {}
+  redis:
+    profiles:
+      - disabled
+YAML
 ```
 
 ### 5. 生产服务器：更新镜像标签并启动服务
