@@ -248,25 +248,22 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
-				// Antigravity 单账号退避重试：分组内没有其他可用账号时，
-				// 对 503 错误不直接返回，而是清除排除列表、等待退避后重试同一个账号。
-				// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
-				if fs.LastFailoverErr != nil && fs.LastFailoverErr.StatusCode == http.StatusServiceUnavailable && fs.SwitchCount <= fs.MaxSwitches {
-					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), fs.SwitchCount) {
-						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", fs.SwitchCount, fs.MaxSwitches)
-						fs.FailedAccountIDs = make(map[int64]struct{})
-						// 设置 context 标记，让 Service 层预检查等待限流过期而非直接切换
-						ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
-						c.Request = c.Request.WithContext(ctx)
-						continue
+				action := fs.HandleSelectionExhausted(c.Request.Context())
+				switch action {
+				case FailoverContinue:
+					ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
+					c.Request = c.Request.WithContext(ctx)
+					continue
+				case FailoverCanceled:
+					return
+				default: // FailoverExhausted
+					if fs.LastFailoverErr != nil {
+						h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
+					} else {
+						h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 					}
+					return
 				}
-				if fs.LastFailoverErr != nil {
-					h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
-				} else {
-					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
-				}
-				return
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID)
@@ -357,7 +354,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 					switch action {
-					case FailoverRetry, FailoverSwitch:
+					case FailoverContinue:
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
@@ -424,25 +421,22 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
-				// Antigravity 单账号退避重试：分组内没有其他可用账号时，
-				// 对 503 错误不直接返回，而是清除排除列表、等待退避后重试同一个账号。
-				// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
-				if fs.LastFailoverErr != nil && fs.LastFailoverErr.StatusCode == http.StatusServiceUnavailable && fs.SwitchCount <= fs.MaxSwitches {
-					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), fs.SwitchCount) {
-						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", fs.SwitchCount, fs.MaxSwitches)
-						fs.FailedAccountIDs = make(map[int64]struct{})
-						// 设置 context 标记，让 Service 层预检查等待限流过期而非直接切换
-						ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
-						c.Request = c.Request.WithContext(ctx)
-						continue
+				action := fs.HandleSelectionExhausted(c.Request.Context())
+				switch action {
+				case FailoverContinue:
+					ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
+					c.Request = c.Request.WithContext(ctx)
+					continue
+				case FailoverCanceled:
+					return
+				default: // FailoverExhausted
+					if fs.LastFailoverErr != nil {
+						h.handleFailoverExhausted(c, fs.LastFailoverErr, platform, streamStarted)
+					} else {
+						h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 					}
+					return
 				}
-				if fs.LastFailoverErr != nil {
-					h.handleFailoverExhausted(c, fs.LastFailoverErr, platform, streamStarted)
-				} else {
-					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
-				}
-				return
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID)
@@ -566,7 +560,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 					switch action {
-					case FailoverRetry, FailoverSwitch:
+					case FailoverContinue:
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
@@ -833,48 +827,6 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
 	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
 		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
-}
-
-// needForceCacheBilling 判断 failover 时是否需要强制缓存计费
-// 粘性会话切换账号、或上游明确标记时，将 input_tokens 转为 cache_read 计费
-func needForceCacheBilling(hasBoundSession bool, failoverErr *service.UpstreamFailoverError) bool {
-	return hasBoundSession || (failoverErr != nil && failoverErr.ForceCacheBilling)
-}
-
-// sleepFailoverDelay 账号切换线性递增延时：第1次0s、第2次1s、第3次2s…
-// 返回 false 表示 context 已取消。
-func sleepFailoverDelay(ctx context.Context, switchCount int) bool {
-	delay := time.Duration(switchCount-1) * time.Second
-	if delay <= 0 {
-		return true
-	}
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(delay):
-		return true
-	}
-}
-
-// sleepAntigravitySingleAccountBackoff Antigravity 平台单账号分组的 503 退避重试延时。
-// 当分组内只有一个可用账号且上游返回 503（MODEL_CAPACITY_EXHAUSTED）时使用，
-// 采用短固定延时策略。Service 层在 SingleAccountRetry 模式下已经做了充分的原地重试
-// （最多 3 次、总等待 30s），所以 Handler 层的退避只需短暂等待即可。
-// 返回 false 表示 context 已取消。
-func sleepAntigravitySingleAccountBackoff(ctx context.Context, retryCount int) bool {
-	// 固定短延时：2s
-	// Service 层已经在原地等待了足够长的时间（retryDelay × 重试次数），
-	// Handler 层只需短暂间隔后重新进入 Service 层即可。
-	const delay = 2 * time.Second
-
-	log.Printf("Antigravity single-account 503 backoff: waiting %v before retry (attempt %d)", delay, retryCount)
-
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(delay):
-		return true
-	}
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {

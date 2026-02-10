@@ -337,21 +337,18 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
 				return
 			}
-			// Antigravity 单账号退避重试：分组内没有其他可用账号时，
-			// 对 503 错误不直接返回，而是清除排除列表、等待退避后重试同一个账号。
-			// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
-			if fs.LastFailoverErr != nil && fs.LastFailoverErr.StatusCode == http.StatusServiceUnavailable && fs.SwitchCount <= fs.MaxSwitches {
-				if sleepAntigravitySingleAccountBackoff(c.Request.Context(), fs.SwitchCount) {
-					log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", fs.SwitchCount, fs.MaxSwitches)
-					fs.FailedAccountIDs = make(map[int64]struct{})
-					// 设置 context 标记，让 Service 层预检查等待限流过期而非直接切换
-					ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
-					c.Request = c.Request.WithContext(ctx)
-					continue
-				}
+			action := fs.HandleSelectionExhausted(c.Request.Context())
+			switch action {
+			case FailoverContinue:
+				ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
+				c.Request = c.Request.WithContext(ctx)
+				continue
+			case FailoverCanceled:
+				return
+			default: // FailoverExhausted
+				h.handleGeminiFailoverExhausted(c, fs.LastFailoverErr)
+				return
 			}
-			h.handleGeminiFailoverExhausted(c, fs.LastFailoverErr)
-			return
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID)
@@ -441,7 +438,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			if errors.As(err, &failoverErr) {
 				action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 				switch action {
-				case FailoverRetry, FailoverSwitch:
+				case FailoverContinue:
 					continue
 				case FailoverExhausted:
 					h.handleGeminiFailoverExhausted(c, fs.LastFailoverErr)

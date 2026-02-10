@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -18,10 +19,8 @@ type TempUnscheduler interface {
 type FailoverAction int
 
 const (
-	// FailoverRetry 同账号重试（调用方应 continue 重新进入循环，不更换账号）
-	FailoverRetry FailoverAction = iota
-	// FailoverSwitch 切换账号（调用方应 continue 重新选择账号）
-	FailoverSwitch
+	// FailoverContinue 继续循环（同账号重试或切换账号，调用方统一 continue）
+	FailoverContinue FailoverAction = iota
 	// FailoverExhausted 切换次数耗尽（调用方应返回错误响应）
 	FailoverExhausted
 	// FailoverCanceled context 已取消（调用方应直接 return）
@@ -33,6 +32,10 @@ const (
 	maxSameAccountRetries = 2
 	// sameAccountRetryDelay 同账号重试间隔
 	sameAccountRetryDelay = 500 * time.Millisecond
+	// singleAccountBackoffDelay 单账号分组 503 退避重试固定延时。
+	// Service 层在 SingleAccountRetry 模式下已做充分原地重试（最多 3 次、总等待 30s），
+	// Handler 层只需短暂间隔后重新进入 Service 层即可。
+	singleAccountBackoffDelay = 2 * time.Second
 )
 
 // FailoverState 跨循环迭代共享的 failover 状态
@@ -80,7 +83,7 @@ func (s *FailoverState) HandleFailoverError(
 		if !sleepWithContext(ctx, sameAccountRetryDelay) {
 			return FailoverCanceled
 		}
-		return FailoverRetry
+		return FailoverContinue
 	}
 
 	// 同账号重试用尽，执行临时封禁
@@ -103,12 +106,44 @@ func (s *FailoverState) HandleFailoverError(
 
 	// Antigravity 平台换号线性递增延时
 	if platform == service.PlatformAntigravity {
-		if !sleepFailoverDelay(ctx, s.SwitchCount) {
+		delay := time.Duration(s.SwitchCount-1) * time.Second
+		if !sleepWithContext(ctx, delay) {
 			return FailoverCanceled
 		}
 	}
 
-	return FailoverSwitch
+	return FailoverContinue
+}
+
+// HandleSelectionExhausted 处理选号失败（所有候选账号都在排除列表中）时的退避重试决策。
+// 针对 Antigravity 单账号分组的 503 (MODEL_CAPACITY_EXHAUSTED) 场景：
+// 清除排除列表、等待退避后重新选号。
+//
+// 返回 FailoverContinue 时，调用方应设置 SingleAccountRetry context 并 continue。
+// 返回 FailoverExhausted 时，调用方应返回错误响应。
+// 返回 FailoverCanceled 时，调用方应直接 return。
+func (s *FailoverState) HandleSelectionExhausted(ctx context.Context) FailoverAction {
+	if s.LastFailoverErr != nil &&
+		s.LastFailoverErr.StatusCode == http.StatusServiceUnavailable &&
+		s.SwitchCount <= s.MaxSwitches {
+
+		log.Printf("Antigravity single-account 503 backoff: waiting %v before retry (attempt %d)",
+			singleAccountBackoffDelay, s.SwitchCount)
+		if !sleepWithContext(ctx, singleAccountBackoffDelay) {
+			return FailoverCanceled
+		}
+		log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d",
+			s.SwitchCount, s.MaxSwitches)
+		s.FailedAccountIDs = make(map[int64]struct{})
+		return FailoverContinue
+	}
+	return FailoverExhausted
+}
+
+// needForceCacheBilling 判断 failover 时是否需要强制缓存计费。
+// 粘性会话切换账号、或上游明确标记时，将 input_tokens 转为 cache_read 计费。
+func needForceCacheBilling(hasBoundSession bool, failoverErr *service.UpstreamFailoverError) bool {
+	return hasBoundSession || (failoverErr != nil && failoverErr.ForceCacheBilling)
 }
 
 // sleepWithContext 等待指定时长，返回 false 表示 context 已取消。
