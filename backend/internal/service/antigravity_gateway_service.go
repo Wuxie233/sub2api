@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -39,6 +40,14 @@ const (
 	antigravitySmartRetryMaxAttempts    = 1                // 智能重试最大次数（仅重试 1 次，防止重复限流/长期等待）
 	antigravityDefaultRateLimitDuration = 30 * time.Second // 默认限流时间（无 retryDelay 时使用）
 
+	// MODEL_CAPACITY_EXHAUSTED 专用常量
+	// 容量不足是临时状态，所有账号共享容量池，与限流不同
+	// - retryDelay < antigravityModelCapacityWaitThreshold: 按实际 retryDelay 等待后重试 1 次
+	// - retryDelay >= antigravityModelCapacityWaitThreshold 或无 retryDelay: 等待 20s 后重试 1 次
+	// - 重试仍为容量不足: 切换账号
+	// - 重试遇到其他错误: 按实际错误码处理
+	antigravityModelCapacityWaitThreshold = 20 * time.Second // 容量不足等待阈值
+
 	// Google RPC 状态和类型常量
 	googleRPCStatusResourceExhausted      = "RESOURCE_EXHAUSTED"
 	googleRPCStatusUnavailable            = "UNAVAILABLE"
@@ -46,6 +55,19 @@ const (
 	googleRPCTypeErrorInfo                = "type.googleapis.com/google.rpc.ErrorInfo"
 	googleRPCReasonModelCapacityExhausted = "MODEL_CAPACITY_EXHAUSTED"
 	googleRPCReasonRateLimitExceeded      = "RATE_LIMIT_EXCEEDED"
+
+	// 单账号 503 退避重试：Service 层原地重试的最大次数
+	// 在 handleSmartRetry 中，对于 shouldRateLimitModel（长延迟 ≥ 7s）的情况，
+	// 多账号模式下会设限流+切换账号；但单账号模式下改为原地等待+重试。
+	antigravitySingleAccountSmartRetryMaxAttempts = 3
+
+	// 单账号 503 退避重试：原地重试时单次最大等待时间
+	// 防止上游返回过长的 retryDelay 导致请求卡住太久
+	antigravitySingleAccountSmartRetryMaxWait = 15 * time.Second
+
+	// 单账号 503 退避重试：原地重试的总累计等待时间上限
+	// 超过此上限将不再重试，直接返回 503
+	antigravitySingleAccountSmartRetryTotalMaxWait = 30 * time.Second
 )
 
 // antigravityPassthroughErrorMessages 透传给客户端的错误消息白名单（小写）
@@ -144,10 +166,22 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 	}
 
 	// 判断是否触发智能重试
-	shouldSmartRetry, shouldRateLimitModel, waitDuration, modelName := shouldTriggerAntigravitySmartRetry(p.account, respBody)
+	shouldSmartRetry, shouldRateLimitModel, waitDuration, modelName, isModelCapacityExhausted := shouldTriggerAntigravitySmartRetry(p.account, respBody)
+
+	// MODEL_CAPACITY_EXHAUSTED: 独立处理
+	if isModelCapacityExhausted {
+		return s.handleModelCapacityExhaustedRetry(p, resp, respBody, baseURL, waitDuration, modelName)
+	}
 
 	// 情况1: retryDelay >= 阈值，限流模型并切换账号
 	if shouldRateLimitModel {
+		// 单账号 503 退避重试模式：不设限流、不切换账号，改为原地等待+重试
+		// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
+		// 多账号场景下切换账号是最优选择，但单账号场景下设限流毫无意义（只会导致双重等待）。
+		if resp.StatusCode == http.StatusServiceUnavailable && isSingleAccountRetry(p.ctx) {
+			return s.handleSingleAccountRetryInPlace(p, resp, respBody, baseURL, waitDuration, modelName)
+		}
+
 		rateLimitDuration := waitDuration
 		if rateLimitDuration <= 0 {
 			rateLimitDuration = antigravityDefaultRateLimitDuration
@@ -229,14 +263,14 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 
 			// 解析新的重试信息，用于下次重试的等待时间
 			if attempt < antigravitySmartRetryMaxAttempts && lastRetryBody != nil {
-				newShouldRetry, _, newWaitDuration, _ := shouldTriggerAntigravitySmartRetry(p.account, lastRetryBody)
+				newShouldRetry, _, newWaitDuration, _, _ := shouldTriggerAntigravitySmartRetry(p.account, lastRetryBody)
 				if newShouldRetry && newWaitDuration > 0 {
 					waitDuration = newWaitDuration
 				}
 			}
 		}
 
-		// 所有重试都失败，限流当前模型并切换账号
+		// 所有重试都失败
 		rateLimitDuration := waitDuration
 		if rateLimitDuration <= 0 {
 			rateLimitDuration = antigravityDefaultRateLimitDuration
@@ -245,6 +279,22 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		if retryBody == nil {
 			retryBody = respBody
 		}
+
+		// 单账号 503 退避重试模式：智能重试耗尽后不设限流、不切换账号，
+		// 直接返回 503 让 Handler 层的单账号退避循环做最终处理。
+		if resp.StatusCode == http.StatusServiceUnavailable && isSingleAccountRetry(p.ctx) {
+			log.Printf("%s status=%d smart_retry_exhausted_single_account attempts=%d model=%s account=%d body=%s (return 503 directly)",
+				p.prefix, resp.StatusCode, antigravitySmartRetryMaxAttempts, modelName, p.account.ID, truncateForLog(retryBody, 200))
+			return &smartRetryResult{
+				action: smartRetryActionBreakWithResp,
+				resp: &http.Response{
+					StatusCode: resp.StatusCode,
+					Header:     resp.Header.Clone(),
+					Body:       io.NopCloser(bytes.NewReader(retryBody)),
+				},
+			}
+		}
+
 		log.Printf("%s status=%d smart_retry_exhausted attempts=%d model=%s account=%d upstream_retry_delay=%v body=%s (switch account)",
 			p.prefix, resp.StatusCode, antigravitySmartRetryMaxAttempts, modelName, p.account.ID, rateLimitDuration, truncateForLog(retryBody, 200))
 
@@ -279,17 +329,243 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 	return &smartRetryResult{action: smartRetryActionContinue}
 }
 
+// handleModelCapacityExhaustedRetry 处理 MODEL_CAPACITY_EXHAUSTED 的重试逻辑
+// 策略：
+//   - retryDelay < antigravityModelCapacityWaitThreshold: 按实际 retryDelay 等待后重试 1 次
+//   - retryDelay >= antigravityModelCapacityWaitThreshold 或无 retryDelay: 等待 20s 后重试 1 次
+//   - 重试成功: 直接返回
+//   - 重试仍为 MODEL_CAPACITY_EXHAUSTED: 切换账号
+//   - 重试遇到其他错误 (429 限流等): 返回该响应，让上层按实际错误码处理
+func (s *AntigravityGatewayService) handleModelCapacityExhaustedRetry(
+	p antigravityRetryLoopParams, resp *http.Response, respBody []byte,
+	baseURL string, retryDelay time.Duration, modelName string,
+) *smartRetryResult {
+	// 确定等待时间
+	waitDuration := retryDelay
+	if retryDelay <= 0 || retryDelay >= antigravityModelCapacityWaitThreshold {
+		// 无 retryDelay 或 >= 20s: 固定等待 20s
+		waitDuration = antigravityModelCapacityWaitThreshold
+	}
+
+	log.Printf("%s status=%d model_capacity_exhausted_retry delay=%v model=%s account=%d",
+		p.prefix, resp.StatusCode, waitDuration, modelName, p.account.ID)
+
+	select {
+	case <-p.ctx.Done():
+		log.Printf("%s status=context_canceled_during_capacity_retry", p.prefix)
+		return &smartRetryResult{action: smartRetryActionBreakWithResp, err: p.ctx.Err()}
+	case <-time.After(waitDuration):
+	}
+
+	retryReq, err := antigravity.NewAPIRequestWithURL(p.ctx, baseURL, p.action, p.accessToken, p.body)
+	if err != nil {
+		log.Printf("%s status=capacity_retry_request_build_failed error=%v", p.prefix, err)
+		return &smartRetryResult{
+			action: smartRetryActionBreakWithResp,
+			resp: &http.Response{
+				StatusCode: resp.StatusCode,
+				Header:     resp.Header.Clone(),
+				Body:       io.NopCloser(bytes.NewReader(respBody)),
+			},
+		}
+	}
+
+	retryResp, retryErr := p.httpUpstream.Do(retryReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+
+	// 网络错误: 切换账号
+	if retryErr != nil || retryResp == nil {
+		log.Printf("%s status=capacity_retry_network_error error=%v (switch account)",
+			p.prefix, retryErr)
+		return &smartRetryResult{
+			action: smartRetryActionBreakWithResp,
+			switchError: &AntigravityAccountSwitchError{
+				OriginalAccountID: p.account.ID,
+				RateLimitedModel:  modelName,
+				IsStickySession:   p.isStickySession,
+			},
+		}
+	}
+
+	// 成功 (非 429/503): 直接返回
+	if retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
+		log.Printf("%s status=%d model_capacity_retry_success", p.prefix, retryResp.StatusCode)
+		return &smartRetryResult{action: smartRetryActionBreakWithResp, resp: retryResp}
+	}
+
+	// 读取重试响应体，判断是否仍为容量不足
+	retryBody, _ := io.ReadAll(io.LimitReader(retryResp.Body, 2<<20))
+	_ = retryResp.Body.Close()
+
+	retryInfo := parseAntigravitySmartRetryInfo(retryBody)
+
+	// 不再是 MODEL_CAPACITY_EXHAUSTED（例如变成了 429 限流）: 返回该响应让上层处理
+	if retryInfo == nil || !retryInfo.IsModelCapacityExhausted {
+		log.Printf("%s status=%d capacity_retry_got_different_error body=%s",
+			p.prefix, retryResp.StatusCode, truncateForLog(retryBody, 200))
+		retryResp.Body = io.NopCloser(bytes.NewReader(retryBody))
+		return &smartRetryResult{action: smartRetryActionBreakWithResp, resp: retryResp}
+	}
+
+	// 仍然是 MODEL_CAPACITY_EXHAUSTED: 切换账号
+	log.Printf("%s status=%d model_capacity_exhausted_retry_failed model=%s account=%d (switch account)",
+		p.prefix, resp.StatusCode, modelName, p.account.ID)
+
+	return &smartRetryResult{
+		action: smartRetryActionBreakWithResp,
+		switchError: &AntigravityAccountSwitchError{
+			OriginalAccountID: p.account.ID,
+			RateLimitedModel:  modelName,
+			IsStickySession:   p.isStickySession,
+		},
+	}
+}
+
+// handleSingleAccountRetryInPlace 单账号 503 退避重试的原地重试逻辑。
+//
+// 在多账号场景下，收到 503 + 长 retryDelay（≥ 7s）时会设置模型限流 + 切换账号；
+// 但在单账号场景下，设限流毫无意义（因为切换回来的还是同一个账号，还要等限流过期）。
+// 此方法改为在 Service 层原地等待 + 重试，避免双重等待问题：
+//
+//	旧流程：Service 设限流 → Handler 退避等待 → Service 等限流过期 → 再请求（总耗时 = 退避 + 限流）
+//	新流程：Service 直接等 retryDelay → 重试 → 成功/再等 → 重试...（总耗时 ≈ 实际 retryDelay × 重试次数）
+//
+// 约束：
+//   - 单次等待不超过 antigravitySingleAccountSmartRetryMaxWait
+//   - 总累计等待不超过 antigravitySingleAccountSmartRetryTotalMaxWait
+//   - 最多重试 antigravitySingleAccountSmartRetryMaxAttempts 次
+func (s *AntigravityGatewayService) handleSingleAccountRetryInPlace(
+	p antigravityRetryLoopParams,
+	resp *http.Response,
+	respBody []byte,
+	baseURL string,
+	waitDuration time.Duration,
+	modelName string,
+) *smartRetryResult {
+	// 限制单次等待时间
+	if waitDuration > antigravitySingleAccountSmartRetryMaxWait {
+		waitDuration = antigravitySingleAccountSmartRetryMaxWait
+	}
+	if waitDuration < antigravitySmartRetryMinWait {
+		waitDuration = antigravitySmartRetryMinWait
+	}
+
+	log.Printf("%s status=%d single_account_503_retry_in_place model=%s account=%d upstream_retry_delay=%v (retrying in-place instead of rate-limiting)",
+		p.prefix, resp.StatusCode, modelName, p.account.ID, waitDuration)
+
+	var lastRetryResp *http.Response
+	var lastRetryBody []byte
+	totalWaited := time.Duration(0)
+
+	for attempt := 1; attempt <= antigravitySingleAccountSmartRetryMaxAttempts; attempt++ {
+		// 检查累计等待是否超限
+		if totalWaited+waitDuration > antigravitySingleAccountSmartRetryTotalMaxWait {
+			remaining := antigravitySingleAccountSmartRetryTotalMaxWait - totalWaited
+			if remaining <= 0 {
+				log.Printf("%s single_account_503_retry: total_wait_exceeded total=%v max=%v, giving up",
+					p.prefix, totalWaited, antigravitySingleAccountSmartRetryTotalMaxWait)
+				break
+			}
+			waitDuration = remaining
+		}
+
+		log.Printf("%s status=%d single_account_503_retry attempt=%d/%d delay=%v total_waited=%v model=%s account=%d",
+			p.prefix, resp.StatusCode, attempt, antigravitySingleAccountSmartRetryMaxAttempts, waitDuration, totalWaited, modelName, p.account.ID)
+
+		select {
+		case <-p.ctx.Done():
+			log.Printf("%s status=context_canceled_during_single_account_retry", p.prefix)
+			return &smartRetryResult{action: smartRetryActionBreakWithResp, err: p.ctx.Err()}
+		case <-time.After(waitDuration):
+		}
+		totalWaited += waitDuration
+
+		// 创建新请求
+		retryReq, err := antigravity.NewAPIRequestWithURL(p.ctx, baseURL, p.action, p.accessToken, p.body)
+		if err != nil {
+			log.Printf("%s single_account_503_retry: request_build_failed error=%v", p.prefix, err)
+			break
+		}
+
+		retryResp, retryErr := p.httpUpstream.Do(retryReq, p.proxyURL, p.account.ID, p.account.Concurrency)
+		if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
+			log.Printf("%s status=%d single_account_503_retry_success attempt=%d/%d total_waited=%v",
+				p.prefix, retryResp.StatusCode, attempt, antigravitySingleAccountSmartRetryMaxAttempts, totalWaited)
+			// 关闭之前的响应
+			if lastRetryResp != nil {
+				_ = lastRetryResp.Body.Close()
+			}
+			return &smartRetryResult{action: smartRetryActionBreakWithResp, resp: retryResp}
+		}
+
+		// 网络错误时继续重试
+		if retryErr != nil || retryResp == nil {
+			log.Printf("%s single_account_503_retry: network_error attempt=%d/%d error=%v",
+				p.prefix, attempt, antigravitySingleAccountSmartRetryMaxAttempts, retryErr)
+			continue
+		}
+
+		// 关闭之前的响应
+		if lastRetryResp != nil {
+			_ = lastRetryResp.Body.Close()
+		}
+		lastRetryResp = retryResp
+		lastRetryBody, _ = io.ReadAll(io.LimitReader(retryResp.Body, 2<<20))
+		_ = retryResp.Body.Close()
+
+		// 解析新的重试信息，更新下次等待时间
+		if attempt < antigravitySingleAccountSmartRetryMaxAttempts && lastRetryBody != nil {
+			_, _, newWaitDuration, _, _ := shouldTriggerAntigravitySmartRetry(p.account, lastRetryBody)
+			if newWaitDuration > 0 {
+				waitDuration = newWaitDuration
+				if waitDuration > antigravitySingleAccountSmartRetryMaxWait {
+					waitDuration = antigravitySingleAccountSmartRetryMaxWait
+				}
+				if waitDuration < antigravitySmartRetryMinWait {
+					waitDuration = antigravitySmartRetryMinWait
+				}
+			}
+		}
+	}
+
+	// 所有重试都失败，不设限流，直接返回 503
+	// Handler 层的单账号退避循环会做最终处理
+	retryBody := lastRetryBody
+	if retryBody == nil {
+		retryBody = respBody
+	}
+	log.Printf("%s status=%d single_account_503_retry_exhausted attempts=%d total_waited=%v model=%s account=%d body=%s (return 503 directly)",
+		p.prefix, resp.StatusCode, antigravitySingleAccountSmartRetryMaxAttempts, totalWaited, modelName, p.account.ID, truncateForLog(retryBody, 200))
+
+	return &smartRetryResult{
+		action: smartRetryActionBreakWithResp,
+		resp: &http.Response{
+			StatusCode: resp.StatusCode,
+			Header:     resp.Header.Clone(),
+			Body:       io.NopCloser(bytes.NewReader(retryBody)),
+		},
+	}
+}
+
 // antigravityRetryLoop 执行带 URL fallback 的重试循环
 func (s *AntigravityGatewayService) antigravityRetryLoop(p antigravityRetryLoopParams) (*antigravityRetryLoopResult, error) {
 	// 预检查：如果账号已限流，直接返回切换信号
 	if p.requestedModel != "" {
 		if remaining := p.account.GetRateLimitRemainingTimeWithContext(p.ctx, p.requestedModel); remaining > 0 {
-			log.Printf("%s pre_check: rate_limit_switch remaining=%v model=%s account=%d",
-				p.prefix, remaining.Truncate(time.Millisecond), p.requestedModel, p.account.ID)
-			return nil, &AntigravityAccountSwitchError{
-				OriginalAccountID: p.account.ID,
-				RateLimitedModel:  p.requestedModel,
-				IsStickySession:   p.isStickySession,
+			// 单账号 503 退避重试模式：跳过限流预检查，直接发请求。
+			// 首次请求设的限流是为了多账号调度器跳过该账号，在单账号模式下无意义。
+			// 如果上游确实还不可用，handleSmartRetry → handleSingleAccountRetryInPlace
+			// 会在 Service 层原地等待+重试，不需要在预检查这里等。
+			if isSingleAccountRetry(p.ctx) {
+				log.Printf("%s pre_check: single_account_retry skipping rate_limit remaining=%v model=%s account=%d (will retry in-place if 503)",
+					p.prefix, remaining.Truncate(time.Millisecond), p.requestedModel, p.account.ID)
+			} else {
+				log.Printf("%s pre_check: rate_limit_switch remaining=%v model=%s account=%d",
+					p.prefix, remaining.Truncate(time.Millisecond), p.requestedModel, p.account.ID)
+				return nil, &AntigravityAccountSwitchError{
+					OriginalAccountID: p.account.ID,
+					RateLimitedModel:  p.requestedModel,
+					IsStickySession:   p.isStickySession,
+				}
 			}
 		}
 	}
@@ -1285,6 +1561,27 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 
 			s.handleUpstreamError(ctx, prefix, account, resp.StatusCode, resp.Header, respBody, originalModel, 0, "", isStickySession)
 
+			// 精确匹配服务端配置类 400 错误，触发同账号重试 + failover
+			if resp.StatusCode == http.StatusBadRequest {
+				msg := strings.ToLower(strings.TrimSpace(extractAntigravityErrorMessage(respBody)))
+				if isGoogleProjectConfigError(msg) {
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractAntigravityErrorMessage(respBody)))
+					upstreamDetail := s.getUpstreamErrorDetail(respBody)
+					log.Printf("%s status=400 google_config_error failover=true upstream_message=%q account=%d", prefix, upstreamMsg, account.ID)
+					appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+						Platform:           account.Platform,
+						AccountID:          account.ID,
+						AccountName:        account.Name,
+						UpstreamStatusCode: resp.StatusCode,
+						UpstreamRequestID:  resp.Header.Get("x-request-id"),
+						Kind:               "failover",
+						Message:            upstreamMsg,
+						Detail:             upstreamDetail,
+					})
+					return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, RetryableOnSameAccount: true}
+				}
+			}
+
 			if s.shouldFailoverUpstreamError(resp.StatusCode) {
 				upstreamMsg := strings.TrimSpace(extractAntigravityErrorMessage(respBody))
 				upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -1825,6 +2122,22 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		// Always record upstream context for Ops error logs, even when we will failover.
 		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 
+		// 精确匹配服务端配置类 400 错误，触发同账号重试 + failover
+		if resp.StatusCode == http.StatusBadRequest && isGoogleProjectConfigError(strings.ToLower(upstreamMsg)) {
+			log.Printf("%s status=400 google_config_error failover=true upstream_message=%q account=%d", prefix, upstreamMsg, account.ID)
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  requestID,
+				Kind:               "failover",
+				Message:            upstreamMsg,
+				Detail:             upstreamDetail,
+			})
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: unwrappedForOps, RetryableOnSameAccount: true}
+		}
+
 		if s.shouldFailoverUpstreamError(resp.StatusCode) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -1920,6 +2233,44 @@ func (s *AntigravityGatewayService) shouldFailoverUpstreamError(statusCode int) 
 	}
 }
 
+// isGoogleProjectConfigError 判断（已提取的小写）错误消息是否属于 Google 服务端配置类问题。
+// 只精确匹配已知的服务端侧错误，避免对客户端请求错误做无意义重试。
+// 适用于所有走 Google 后端的平台（Antigravity、Gemini）。
+func isGoogleProjectConfigError(lowerMsg string) bool {
+	// Google 间歇性 Bug：Project ID 有效但被临时识别失败
+	return strings.Contains(lowerMsg, "invalid project resource name")
+}
+
+// googleConfigErrorCooldown 服务端配置类 400 错误的临时封禁时长
+const googleConfigErrorCooldown = 1 * time.Minute
+
+// tempUnscheduleGoogleConfigError 对服务端配置类 400 错误触发临时封禁，
+// 避免短时间内反复调度到同一个有问题的账号。
+func tempUnscheduleGoogleConfigError(ctx context.Context, repo AccountRepository, accountID int64, logPrefix string) {
+	until := time.Now().Add(googleConfigErrorCooldown)
+	reason := "400: invalid project resource name (auto temp-unschedule 1m)"
+	if err := repo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
+		log.Printf("%s temp_unschedule_failed account=%d error=%v", logPrefix, accountID, err)
+	} else {
+		log.Printf("%s temp_unscheduled account=%d until=%v reason=%q", logPrefix, accountID, until.Format("15:04:05"), reason)
+	}
+}
+
+// emptyResponseCooldown 空流式响应的临时封禁时长
+const emptyResponseCooldown = 1 * time.Minute
+
+// tempUnscheduleEmptyResponse 对空流式响应触发临时封禁，
+// 避免短时间内反复调度到同一个返回空响应的账号。
+func tempUnscheduleEmptyResponse(ctx context.Context, repo AccountRepository, accountID int64, logPrefix string) {
+	until := time.Now().Add(emptyResponseCooldown)
+	reason := "empty stream response (auto temp-unschedule 1m)"
+	if err := repo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
+		log.Printf("%s temp_unschedule_failed account=%d error=%v", logPrefix, accountID, err)
+	} else {
+		log.Printf("%s temp_unscheduled account=%d until=%v reason=%q", logPrefix, accountID, until.Format("15:04:05"), reason)
+	}
+}
+
 // sleepAntigravityBackoffWithContext 带 context 取消检查的退避等待
 // 返回 true 表示正常完成等待，false 表示 context 已取消
 func sleepAntigravityBackoffWithContext(ctx context.Context, attempt int) bool {
@@ -1942,6 +2293,12 @@ func sleepAntigravityBackoffWithContext(ctx context.Context, attempt int) bool {
 	case <-time.After(sleepFor):
 		return true
 	}
+}
+
+// isSingleAccountRetry 检查 context 中是否设置了单账号退避重试标记
+func isSingleAccountRetry(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxkey.SingleAccountRetry).(bool)
+	return v
 }
 
 // setModelRateLimitByModelName 使用官方模型 ID 设置模型级限流
@@ -1978,8 +2335,9 @@ func antigravityFallbackCooldownSeconds() (time.Duration, bool) {
 
 // antigravitySmartRetryInfo 智能重试所需的信息
 type antigravitySmartRetryInfo struct {
-	RetryDelay time.Duration // 重试延迟时间
-	ModelName  string        // 限流的模型名称（如 "claude-sonnet-4-5"）
+	RetryDelay               time.Duration // 重试延迟时间
+	ModelName                string        // 限流的模型名称（如 "claude-sonnet-4-5"）
+	IsModelCapacityExhausted bool          // 是否为 MODEL_CAPACITY_EXHAUSTED（503 容量不足，与 429 限流处理策略不同）
 }
 
 // parseAntigravitySmartRetryInfo 解析 Google RPC RetryInfo 和 ErrorInfo 信息
@@ -2088,14 +2446,16 @@ func parseAntigravitySmartRetryInfo(body []byte) *antigravitySmartRetryInfo {
 		return nil
 	}
 
-	// 如果上游未提供 retryDelay，使用默认限流时间
-	if retryDelay <= 0 {
+	// MODEL_CAPACITY_EXHAUSTED: retryDelay 可以为 0（由调用方决定默认等待策略）
+	// RATE_LIMIT_EXCEEDED: 无 retryDelay 时使用默认限流时间
+	if retryDelay <= 0 && !hasModelCapacityExhausted {
 		retryDelay = antigravityDefaultRateLimitDuration
 	}
 
 	return &antigravitySmartRetryInfo{
-		RetryDelay: retryDelay,
-		ModelName:  modelName,
+		RetryDelay:               retryDelay,
+		ModelName:                modelName,
+		IsModelCapacityExhausted: hasModelCapacityExhausted,
 	}
 }
 
@@ -2103,22 +2463,28 @@ func parseAntigravitySmartRetryInfo(body []byte) *antigravitySmartRetryInfo {
 // 返回：
 //   - shouldRetry: 是否应该智能重试（retryDelay < antigravityRateLimitThreshold）
 //   - shouldRateLimitModel: 是否应该限流模型（retryDelay >= antigravityRateLimitThreshold）
-//   - waitDuration: 等待时间（智能重试时使用，shouldRateLimitModel=true 时为 0）
+//   - waitDuration: 等待时间（智能重试时使用，shouldRateLimitModel=true 时为限流时长）
 //   - modelName: 限流的模型名称
-func shouldTriggerAntigravitySmartRetry(account *Account, respBody []byte) (shouldRetry bool, shouldRateLimitModel bool, waitDuration time.Duration, modelName string) {
+//   - isModelCapacityExhausted: 是否为 MODEL_CAPACITY_EXHAUSTED（需要独立处理）
+func shouldTriggerAntigravitySmartRetry(account *Account, respBody []byte) (shouldRetry bool, shouldRateLimitModel bool, waitDuration time.Duration, modelName string, isModelCapacityExhausted bool) {
 	if account.Platform != PlatformAntigravity {
-		return false, false, 0, ""
+		return false, false, 0, "", false
 	}
 
 	info := parseAntigravitySmartRetryInfo(respBody)
 	if info == nil {
-		return false, false, 0, ""
+		return false, false, 0, "", false
+	}
+
+	// MODEL_CAPACITY_EXHAUSTED: 独立处理，不走 7s 阈值判断
+	if info.IsModelCapacityExhausted {
+		return true, false, info.RetryDelay, info.ModelName, true
 	}
 
 	// retryDelay >= 阈值：直接限流模型，不重试
 	// 注意：如果上游未提供 retryDelay，parseAntigravitySmartRetryInfo 已设置为默认 30s
 	if info.RetryDelay >= antigravityRateLimitThreshold {
-		return false, true, info.RetryDelay, info.ModelName
+		return false, true, info.RetryDelay, info.ModelName, false
 	}
 
 	// retryDelay < 阈值：智能重试
@@ -2127,7 +2493,7 @@ func shouldTriggerAntigravitySmartRetry(account *Account, respBody []byte) (shou
 		waitDuration = antigravitySmartRetryMinWait
 	}
 
-	return true, false, waitDuration, info.ModelName
+	return true, false, waitDuration, info.ModelName, false
 }
 
 // handleModelRateLimitParams 模型级限流处理参数
@@ -2163,6 +2529,12 @@ func (s *AntigravityGatewayService) handleModelRateLimit(p *handleModelRateLimit
 	info := parseAntigravitySmartRetryInfo(p.body)
 	if info == nil || info.ModelName == "" {
 		return &handleModelRateLimitResult{Handled: false}
+	}
+
+	// MODEL_CAPACITY_EXHAUSTED: 容量不足由 handleSmartRetry 独立处理，此处仅标记已处理
+	// 不设置模型限流（容量不足是临时的，不等同于限流）
+	if info.IsModelCapacityExhausted {
+		return &handleModelRateLimitResult{Handled: true}
 	}
 
 	// < antigravityRateLimitThreshold: 等待后重试
@@ -2724,9 +3096,14 @@ returnResponse:
 	// 选择最后一个有效响应
 	finalResponse := pickGeminiCollectResult(last, lastWithParts)
 
-	// 处理空响应情况
+	// 处理空响应情况 — 触发同账号重试 + failover 切换账号
 	if last == nil && lastWithParts == nil {
-		log.Printf("[antigravity-Forward] warning: empty stream response, no valid chunks received")
+		log.Printf("[antigravity-Forward] warning: empty stream response (gemini non-stream), triggering failover")
+		return nil, &UpstreamFailoverError{
+			StatusCode:             http.StatusBadGateway,
+			ResponseBody:           []byte(`{"error":"empty stream response from upstream"}`),
+			RetryableOnSameAccount: true,
+		}
 	}
 
 	// 如果收集到了图片 parts，需要合并到最终响应中
@@ -3139,10 +3516,14 @@ returnResponse:
 	// 选择最后一个有效响应
 	finalResponse := pickGeminiCollectResult(last, lastWithParts)
 
-	// 处理空响应情况
+	// 处理空响应情况 — 触发同账号重试 + failover 切换账号
 	if last == nil && lastWithParts == nil {
-		log.Printf("[antigravity-Forward] warning: empty stream response, no valid chunks received")
-		return nil, s.writeClaudeError(c, http.StatusBadGateway, "upstream_error", "Empty response from upstream")
+		log.Printf("[antigravity-Forward] warning: empty stream response (claude non-stream), triggering failover")
+		return nil, &UpstreamFailoverError{
+			StatusCode:             http.StatusBadGateway,
+			ResponseBody:           []byte(`{"error":"empty stream response from upstream"}`),
+			RetryableOnSameAccount: true,
+		}
 	}
 
 	// 将收集的所有 parts 合并到最终响应中

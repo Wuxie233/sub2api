@@ -188,13 +188,14 @@ func TestHandleUpstreamError_429_NonModelRateLimit(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-5", repo.modelRateLimitCalls[0].modelKey)
 }
 
-// TestHandleUpstreamError_503_ModelRateLimit 测试 503 模型限流场景
-func TestHandleUpstreamError_503_ModelRateLimit(t *testing.T) {
+// TestHandleUpstreamError_503_ModelCapacityExhausted 测试 503 模型容量不足场景
+// MODEL_CAPACITY_EXHAUSTED 标记 Handled 但不设模型限流（由 handleSmartRetry 独立处理）
+func TestHandleUpstreamError_503_ModelCapacityExhausted(t *testing.T) {
 	repo := &stubAntigravityAccountRepo{}
 	svc := &AntigravityGatewayService{accountRepo: repo}
 	account := &Account{ID: 3, Name: "acc-3", Platform: PlatformAntigravity}
 
-	// 503 + MODEL_CAPACITY_EXHAUSTED → 模型限流
+	// 503 + MODEL_CAPACITY_EXHAUSTED → 标记已处理，不设模型限流
 	body := []byte(`{
 		"error": {
 			"status": "UNAVAILABLE",
@@ -207,13 +208,11 @@ func TestHandleUpstreamError_503_ModelRateLimit(t *testing.T) {
 
 	result := svc.handleUpstreamError(context.Background(), "[test]", account, http.StatusServiceUnavailable, http.Header{}, body, "gemini-3-pro-high", 0, "", false)
 
-	// 应该触发模型限流
+	// 应该标记已处理，但不设模型限流
 	require.NotNil(t, result)
 	require.True(t, result.Handled)
-	require.NotNil(t, result.SwitchError)
-	require.Equal(t, "gemini-3-pro-high", result.SwitchError.RateLimitedModel)
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gemini-3-pro-high", repo.modelRateLimitCalls[0].modelKey)
+	require.Nil(t, result.SwitchError, "MODEL_CAPACITY_EXHAUSTED should not trigger switch error in handleModelRateLimit")
+	require.Empty(t, repo.modelRateLimitCalls, "MODEL_CAPACITY_EXHAUSTED should not set model rate limit")
 }
 
 // TestHandleUpstreamError_503_NonModelRateLimit 测试 503 非模型限流场景（不处理）
@@ -496,6 +495,7 @@ func TestShouldTriggerAntigravitySmartRetry(t *testing.T) {
 		body                    string
 		expectedShouldRetry     bool
 		expectedShouldRateLimit bool
+		expectedCapacityExhaust bool
 		minWait                 time.Duration
 		modelName               string
 	}{
@@ -611,8 +611,9 @@ func TestShouldTriggerAntigravitySmartRetry(t *testing.T) {
 					]
 				}
 			}`,
-			expectedShouldRetry:     false,
-			expectedShouldRateLimit: true,
+			expectedShouldRetry:     true,
+			expectedShouldRateLimit: false,
+			expectedCapacityExhaust: true,
 			minWait:                 39 * time.Second,
 			modelName:               "gemini-3-pro-high",
 		},
@@ -629,9 +630,10 @@ func TestShouldTriggerAntigravitySmartRetry(t *testing.T) {
 					"message": "No capacity available for model gemini-2.5-flash on the server"
 				}
 			}`,
-			expectedShouldRetry:     false,
-			expectedShouldRateLimit: true,
-			minWait:                 30 * time.Second,
+			expectedShouldRetry:     true,
+			expectedShouldRateLimit: false,
+			expectedCapacityExhaust: true,
+			minWait:                 0, // 无 retryDelay，由 handleModelCapacityExhaustedRetry 决定默认 20s
 			modelName:               "gemini-2.5-flash",
 		},
 		{
@@ -656,16 +658,24 @@ func TestShouldTriggerAntigravitySmartRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			shouldRetry, shouldRateLimit, wait, model := shouldTriggerAntigravitySmartRetry(tt.account, []byte(tt.body))
+			shouldRetry, shouldRateLimit, wait, model, isCapacityExhausted := shouldTriggerAntigravitySmartRetry(tt.account, []byte(tt.body))
 			if shouldRetry != tt.expectedShouldRetry {
 				t.Errorf("shouldRetry = %v, want %v", shouldRetry, tt.expectedShouldRetry)
 			}
 			if shouldRateLimit != tt.expectedShouldRateLimit {
 				t.Errorf("shouldRateLimit = %v, want %v", shouldRateLimit, tt.expectedShouldRateLimit)
 			}
-			if shouldRetry {
+			if isCapacityExhausted != tt.expectedCapacityExhaust {
+				t.Errorf("isCapacityExhausted = %v, want %v", isCapacityExhausted, tt.expectedCapacityExhaust)
+			}
+			if shouldRetry && !isCapacityExhausted {
 				if wait < tt.minWait {
 					t.Errorf("wait = %v, want >= %v", wait, tt.minWait)
+				}
+			}
+			if isCapacityExhausted && tt.minWait > 0 {
+				if wait < tt.minWait {
+					t.Errorf("capacity exhausted wait = %v, want >= %v", wait, tt.minWait)
 				}
 			}
 			if shouldRateLimit && tt.minWait > 0 {
