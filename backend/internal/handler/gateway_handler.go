@@ -232,12 +232,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 
 	if platform == service.PlatformGemini {
-		maxAccountSwitches := h.maxAccountSwitchesGemini
-		switchCount := 0
-		failedAccountIDs := make(map[int64]struct{})
-		sameAccountRetryCount := make(map[int64]int) // 同账号重试计数
-		var lastFailoverErr *service.UpstreamFailoverError
-		var forceCacheBilling bool // 粘性会话切换时的缓存计费标记
+		fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
 
 		// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
 		// 避免单账号分组收到 503 (MODEL_CAPACITY_EXHAUSTED) 时设 29s 限流，导致后续请求连续快速失败。
@@ -247,27 +242,27 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		for {
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, failedAccountIDs, "") // Gemini 不使用会话限制
+			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "") // Gemini 不使用会话限制
 			if err != nil {
-				if len(failedAccountIDs) == 0 {
+				if len(fs.FailedAccountIDs) == 0 {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
 				// Antigravity 单账号退避重试：分组内没有其他可用账号时，
 				// 对 503 错误不直接返回，而是清除排除列表、等待退避后重试同一个账号。
 				// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
-				if lastFailoverErr != nil && lastFailoverErr.StatusCode == http.StatusServiceUnavailable && switchCount <= maxAccountSwitches {
-					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), switchCount) {
-						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", switchCount, maxAccountSwitches)
-						failedAccountIDs = make(map[int64]struct{})
+				if fs.LastFailoverErr != nil && fs.LastFailoverErr.StatusCode == http.StatusServiceUnavailable && fs.SwitchCount <= fs.MaxSwitches {
+					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), fs.SwitchCount) {
+						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", fs.SwitchCount, fs.MaxSwitches)
+						fs.FailedAccountIDs = make(map[int64]struct{})
 						// 设置 context 标记，让 Service 层预检查等待限流过期而非直接切换
 						ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
 						c.Request = c.Request.WithContext(ctx)
 						continue
 					}
 				}
-				if lastFailoverErr != nil {
-					h.handleFailoverExhausted(c, lastFailoverErr, service.PlatformGemini, streamStarted)
+				if fs.LastFailoverErr != nil {
+					h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
 				} else {
 					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 				}
@@ -346,8 +341,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
 			requestCtx := c.Request.Context()
-			if switchCount > 0 {
-				requestCtx = context.WithValue(requestCtx, ctxkey.AccountSwitchCount, switchCount)
+			if fs.SwitchCount > 0 {
+				requestCtx = context.WithValue(requestCtx, ctxkey.AccountSwitchCount, fs.SwitchCount)
 			}
 			if account.Platform == service.PlatformAntigravity {
 				result, err = h.antigravityGatewayService.ForwardGemini(requestCtx, c, account, reqModel, "generateContent", reqStream, body, hasBoundSession)
@@ -360,40 +355,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if err != nil {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					lastFailoverErr = failoverErr
-					if needForceCacheBilling(hasBoundSession, failoverErr) {
-						forceCacheBilling = true
-					}
-
-					// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试
-					if failoverErr.RetryableOnSameAccount && sameAccountRetryCount[account.ID] < maxSameAccountRetries {
-						sameAccountRetryCount[account.ID]++
-						log.Printf("Account %d: retryable error %d, same-account retry %d/%d",
-							account.ID, failoverErr.StatusCode, sameAccountRetryCount[account.ID], maxSameAccountRetries)
-						if !sleepSameAccountRetryDelay(c.Request.Context()) {
-							return
-						}
+					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
+					switch action {
+					case FailoverRetry, FailoverSwitch:
 						continue
-					}
-
-					// 同账号重试用尽，执行临时封禁并切换账号
-					if failoverErr.RetryableOnSameAccount {
-						h.gatewayService.TempUnscheduleRetryableError(c.Request.Context(), account.ID, failoverErr)
-					}
-
-					failedAccountIDs[account.ID] = struct{}{}
-					if switchCount >= maxAccountSwitches {
-						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, streamStarted)
+					case FailoverExhausted:
+						h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
+						return
+					case FailoverCanceled:
 						return
 					}
-					switchCount++
-					log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
-					if account.Platform == service.PlatformAntigravity {
-						if !sleepFailoverDelay(c.Request.Context(), switchCount) {
-							return
-						}
-					}
-					continue
 				}
 				// 错误响应已在Forward中处理，这里只记录日志
 				log.Printf("Forward request failed: %v", err)
@@ -421,7 +392,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}); err != nil {
 					log.Printf("Record usage failed: %v", err)
 				}
-			}(result, account, userAgent, clientIP, forceCacheBilling)
+			}(result, account, userAgent, clientIP, fs.ForceCacheBilling)
 			return
 		}
 	}
@@ -442,37 +413,32 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	for {
-		maxAccountSwitches := h.maxAccountSwitches
-		switchCount := 0
-		failedAccountIDs := make(map[int64]struct{})
-		sameAccountRetryCount := make(map[int64]int) // 同账号重试计数
-		var lastFailoverErr *service.UpstreamFailoverError
+		fs := NewFailoverState(h.maxAccountSwitches, hasBoundSession)
 		retryWithFallback := false
-		var forceCacheBilling bool // 粘性会话切换时的缓存计费标记
 
 		for {
 			// 选择支持该模型的账号
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, failedAccountIDs, parsedReq.MetadataUserID)
+			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID)
 			if err != nil {
-				if len(failedAccountIDs) == 0 {
+				if len(fs.FailedAccountIDs) == 0 {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error(), streamStarted)
 					return
 				}
 				// Antigravity 单账号退避重试：分组内没有其他可用账号时，
 				// 对 503 错误不直接返回，而是清除排除列表、等待退避后重试同一个账号。
 				// 谷歌上游 503 (MODEL_CAPACITY_EXHAUSTED) 通常是暂时性的，等几秒就能恢复。
-				if lastFailoverErr != nil && lastFailoverErr.StatusCode == http.StatusServiceUnavailable && switchCount <= maxAccountSwitches {
-					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), switchCount) {
-						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", switchCount, maxAccountSwitches)
-						failedAccountIDs = make(map[int64]struct{})
+				if fs.LastFailoverErr != nil && fs.LastFailoverErr.StatusCode == http.StatusServiceUnavailable && fs.SwitchCount <= fs.MaxSwitches {
+					if sleepAntigravitySingleAccountBackoff(c.Request.Context(), fs.SwitchCount) {
+						log.Printf("Antigravity single-account 503 retry: clearing failed accounts, retry %d/%d", fs.SwitchCount, fs.MaxSwitches)
+						fs.FailedAccountIDs = make(map[int64]struct{})
 						// 设置 context 标记，让 Service 层预检查等待限流过期而非直接切换
 						ctx := context.WithValue(c.Request.Context(), ctxkey.SingleAccountRetry, true)
 						c.Request = c.Request.WithContext(ctx)
 						continue
 					}
 				}
-				if lastFailoverErr != nil {
-					h.handleFailoverExhausted(c, lastFailoverErr, platform, streamStarted)
+				if fs.LastFailoverErr != nil {
+					h.handleFailoverExhausted(c, fs.LastFailoverErr, platform, streamStarted)
 				} else {
 					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 				}
@@ -549,8 +515,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
 			requestCtx := c.Request.Context()
-			if switchCount > 0 {
-				requestCtx = context.WithValue(requestCtx, ctxkey.AccountSwitchCount, switchCount)
+			if fs.SwitchCount > 0 {
+				requestCtx = context.WithValue(requestCtx, ctxkey.AccountSwitchCount, fs.SwitchCount)
 			}
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, body, hasBoundSession)
@@ -598,40 +564,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					lastFailoverErr = failoverErr
-					if needForceCacheBilling(hasBoundSession, failoverErr) {
-						forceCacheBilling = true
-					}
-
-					// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试
-					if failoverErr.RetryableOnSameAccount && sameAccountRetryCount[account.ID] < maxSameAccountRetries {
-						sameAccountRetryCount[account.ID]++
-						log.Printf("Account %d: retryable error %d, same-account retry %d/%d",
-							account.ID, failoverErr.StatusCode, sameAccountRetryCount[account.ID], maxSameAccountRetries)
-						if !sleepSameAccountRetryDelay(c.Request.Context()) {
-							return
-						}
+					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
+					switch action {
+					case FailoverRetry, FailoverSwitch:
 						continue
-					}
-
-					// 同账号重试用尽，执行临时封禁并切换账号
-					if failoverErr.RetryableOnSameAccount {
-						h.gatewayService.TempUnscheduleRetryableError(c.Request.Context(), account.ID, failoverErr)
-					}
-
-					failedAccountIDs[account.ID] = struct{}{}
-					if switchCount >= maxAccountSwitches {
-						h.handleFailoverExhausted(c, failoverErr, account.Platform, streamStarted)
+					case FailoverExhausted:
+						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
+						return
+					case FailoverCanceled:
 						return
 					}
-					switchCount++
-					log.Printf("Account %d: upstream error %d, switching account %d/%d", account.ID, failoverErr.StatusCode, switchCount, maxAccountSwitches)
-					if account.Platform == service.PlatformAntigravity {
-						if !sleepFailoverDelay(c.Request.Context(), switchCount) {
-							return
-						}
-					}
-					continue
 				}
 				// 错误响应已在Forward中处理，这里只记录日志
 				log.Printf("Account %d: Forward request failed: %v", account.ID, err)
@@ -659,7 +601,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}); err != nil {
 					log.Printf("Record usage failed: %v", err)
 				}
-			}(result, account, userAgent, clientIP, forceCacheBilling)
+			}(result, account, userAgent, clientIP, fs.ForceCacheBilling)
 			return
 		}
 		if !retryWithFallback {
@@ -897,23 +839,6 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 // 粘性会话切换账号、或上游明确标记时，将 input_tokens 转为 cache_read 计费
 func needForceCacheBilling(hasBoundSession bool, failoverErr *service.UpstreamFailoverError) bool {
 	return hasBoundSession || (failoverErr != nil && failoverErr.ForceCacheBilling)
-}
-
-const (
-	// maxSameAccountRetries 同账号重试次数上限（针对 RetryableOnSameAccount 错误）
-	maxSameAccountRetries = 2
-	// sameAccountRetryDelay 同账号重试间隔
-	sameAccountRetryDelay = 500 * time.Millisecond
-)
-
-// sleepSameAccountRetryDelay 同账号重试固定延时，返回 false 表示 context 已取消。
-func sleepSameAccountRetryDelay(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(sameAccountRetryDelay):
-		return true
-	}
 }
 
 // sleepFailoverDelay 账号切换线性递增延时：第1次0s、第2次1s、第3次2s…
