@@ -277,24 +277,21 @@ ssh clicodeplus "docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' |
 
 ### 首次部署步骤
 
+> **构建服务器说明**：正式和 beta 共用构建服务器上的 `/root/sub2api` 仓库，通过不同的镜像标签区分（`sub2api:latest` 用于正式，`sub2api:beta` 用于测试）。
+
 ```bash
-# 0) 进入构建服务器
-ssh us-asaki-root
+# 1) 构建服务器构建 beta 镜像（共用 /root/sub2api 仓库，切到目标分支后打 beta 标签）
+ssh us-asaki-root "cd /root/sub2api && git fetch origin && git checkout -B release/custom-0.1.71 origin/release/custom-0.1.71"
+ssh us-asaki-root "cd /root/sub2api && docker build --no-cache -t sub2api:beta -f Dockerfile ."
 
-# 1) 克隆代码到新目录（示例使用你的 fork）
-cd /root
-git clone https://github.com/touwaeriol/sub2api.git sub2api-beta
-cd /root/sub2api-beta
-git checkout release/custom-0.1.71
+# ⚠️ 构建完成后如需恢复正式分支：
+# ssh us-asaki-root "cd /root/sub2api && git checkout release/custom-<正式版本>"
 
-# 2) 构建 beta 镜像
-docker build -t sub2api:beta -f Dockerfile .
-exit
-
-# 3) 传输镜像到生产服务器
+# 2) 传输镜像到生产服务器
 ssh us-asaki-root "docker save sub2api:beta" | ssh clicodeplus "docker load"
+# ⚠️ 必须看到 "Loaded image: sub2api:beta" 输出
 
-# 4) 在生产服务器上准备 beta 环境
+# 3) 在生产服务器上准备 beta 环境
 ssh clicodeplus
 
 # 克隆代码（仅用于 deploy 配置和版本号确认，不在此构建）
@@ -303,7 +300,7 @@ git clone https://github.com/touwaeriol/sub2api.git sub2api-beta
 cd /root/sub2api-beta
 git checkout release/custom-0.1.71
 
-# 5) 准备 beta 的 .env（敏感信息只写这里）
+# 4) 准备 beta 的 .env（敏感信息只写这里）
 cd /root/sub2api-beta/deploy
 
 # 推荐：从现网 .env 复制，保证除 DB 名/用户/端口外完全一致
@@ -314,7 +311,7 @@ perl -pi -e 's/^SERVER_PORT=.*/SERVER_PORT=8084/' ./.env
 perl -pi -e 's/^POSTGRES_USER=.*/POSTGRES_USER=beta/' ./.env
 perl -pi -e 's/^POSTGRES_DB=.*/POSTGRES_DB=beta/' ./.env
 
-# 6) 写 compose override（避免与现网容器名冲突，镜像使用构建服务器传输的 sub2api:beta）
+# 5) 写 compose override（避免与现网容器名冲突，镜像使用构建服务器传输的 sub2api:beta）
 cat > docker-compose.override.yml <<'YAML'
 services:
   sub2api:
@@ -324,11 +321,11 @@ services:
     container_name: sub2api-beta-redis
 YAML
 
-# 7) 启动 beta（独立 project，确保不影响现网）
+# 6) 启动 beta（独立 project，确保不影响现网）
 cd /root/sub2api-beta/deploy
 docker compose -p sub2api-beta --env-file .env -f docker-compose.yml -f docker-compose.override.yml up -d
 
-# 8) 验证 beta
+# 7) 验证 beta
 curl -fsS http://127.0.0.1:8084/health
 docker logs sub2api-beta --tail 50
 ```
@@ -345,19 +342,22 @@ docker logs sub2api-beta --tail 50
 ### 更新 beta（构建服务器构建 + 传输 + 仅重启 beta 容器）
 
 ```bash
-# 1) 构建服务器拉取代码并构建镜像
-ssh us-asaki-root "set -e; cd /root/sub2api-beta && git fetch --all --tags && git checkout -f release/custom-0.1.71 && git reset --hard origin/release/custom-0.1.71"
-ssh us-asaki-root "cd /root/sub2api-beta && docker build -t sub2api:beta -f Dockerfile ."
+# 1) 构建服务器拉取代码并构建镜像（共用 /root/sub2api 仓库）
+ssh us-asaki-root "cd /root/sub2api && git fetch origin && git checkout -B release/custom-0.1.71 origin/release/custom-0.1.71"
+ssh us-asaki-root "cd /root/sub2api && docker build --no-cache -t sub2api:beta -f Dockerfile ."
+# ⚠️ 必须看到构建成功输出
 
 # 2) 传输镜像到生产服务器
 ssh us-asaki-root "docker save sub2api:beta" | ssh clicodeplus "docker load"
+# ⚠️ 必须看到 "Loaded image: sub2api:beta" 输出
 
 # 3) 生产服务器同步代码（用于版本号确认和 deploy 配置）
 ssh clicodeplus "set -e; cd /root/sub2api-beta && git fetch --all --tags && git checkout -f release/custom-0.1.71 && git reset --hard origin/release/custom-0.1.71"
 
-# 4) 重启 beta 容器
+# 4) 重启 beta 容器并验证
 ssh clicodeplus "cd /root/sub2api-beta/deploy && docker compose -p sub2api-beta --env-file .env -f docker-compose.yml -f docker-compose.override.yml up -d --no-deps --force-recreate sub2api"
-ssh clicodeplus "curl -fsS http://127.0.0.1:8084/health"
+ssh clicodeplus "sleep 5 && curl -fsS http://127.0.0.1:8084/health"
+ssh clicodeplus "cat /root/sub2api-beta/backend/cmd/server/VERSION"
 ```
 
 ### 停止/回滚 beta（只影响 beta）
