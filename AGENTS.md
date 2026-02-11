@@ -798,18 +798,37 @@ PR 目标是上游官方仓库，**只包含通用功能改动**（bug fix、新
 
 推送到我们自己的 `develop` 或 `main` 分支时，包含所有改动（定制化 + 通用功能）。
 
-**推送流程**：
-1. 本地运行 `cd backend && make test-unit` 确保单元测试通过
-2. 本地运行 `cd backend && gofmt -l ./...` 确保格式正确
-3. 推送后确认 CI 和 Security Scan 两个 workflow 的 4 个 job 全部绿色 ✅
-4. 任何 job 失败必须立即修复，**禁止在 CI 未通过的状态下继续后续操作**
+**推送前必须在本地执行全部 CI 检查**（不要等 GitHub Actions）：
+
+```bash
+# 确保 Go 工具链可用（macOS homebrew）
+export PATH="/opt/homebrew/bin:$HOME/go/bin:$PATH"
+
+# 1. 单元测试（必须）
+cd backend && make test-unit
+
+# 2. 集成测试（推荐，需要 Docker）
+make test-integration
+
+# 3. golangci-lint 静态检查（必须）
+golangci-lint run --timeout=5m
+
+# 4. gofmt 格式检查（必须）
+gofmt -l ./...
+# 如果有输出，运行 gofmt -w <file> 修复
+```
+
+**推送后确认**：
+1. 使用 `gh run list --repo touwaeriol/sub2api --branch <branch>` 检查 GitHub Actions 状态
+2. 确认 CI 和 Security Scan 两个 workflow 的 4 个 job 全部绿色 ✅
+3. 任何 job 失败必须立即修复，**禁止在 CI 未通过的状态下继续后续操作**
 
 ### 发布版本
 
-1. 确保 `main` 分支最新提交的 4 个 CI job 全部通过
+1. 本地执行上述全部 CI 检查通过
 2. 递增 `backend/cmd/server/VERSION`，提交并推送
-3. 打 tag 推送后，确认 tag 触发的 3 个 workflow（CI、Security Scan、Release）全部通过
-4. **Release workflow 失败时禁止部署** — 必须先修复问题，删除旧 tag，重新打 tag
+3. 推送后确认 GitHub Actions 的 4 个 CI job 全部通过
+4. **CI 未通过时禁止部署** — 必须先修复问题
 5. 使用 `gh run list --repo touwaeriol/sub2api --limit 10` 确认状态
 
 ### 常见 CI 失败原因及修复
