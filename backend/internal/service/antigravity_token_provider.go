@@ -162,7 +162,7 @@ func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *
 func (p *AntigravityTokenProvider) tryFillProjectID(ctx context.Context, account *Account, accessToken string) {
 	// 冷却检查：60s 内不重复尝试
 	if lastAttempt, ok := p.projectIDFillAttempts.Load(account.ID); ok {
-		if time.Since(lastAttempt.(time.Time)) < projectIDFillCooldown {
+		if t, ok := lastAttempt.(time.Time); ok && time.Since(t) < projectIDFillCooldown {
 			return
 		}
 	}
