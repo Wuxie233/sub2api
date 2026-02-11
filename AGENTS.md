@@ -531,7 +531,7 @@ docker stats sub2api
 x-api-key: admin-xxx
 ```
 
-> **使用说明**：用户提供 admin token 后，直接将其作为 `x-api-key` 的值使用。Token 格式为 `admin-` + 64 位十六进制字符，在管理后台 `设置 > Admin API Key` 中生成。**请勿将实际 token 写入文档或代码中。**
+> **使用说明**：Admin API Key 统一存放在项目根目录 `.env` 文件的 `ADMIN_API_KEY` 变量中（该文件已被 `.gitignore` 排除，不会提交到代码库）。操作前先从 `.env` 读取密钥；若密钥失效（返回 401），应提示用户提供新的密钥并更新到 `.env` 中。Token 格式为 `admin-` + 64 位十六进制字符，在管理后台 `设置 > Admin API Key` 中生成。**请勿将实际 token 写入文档或代码中。**
 
 ### 环境地址
 
@@ -541,7 +541,7 @@ x-api-key: admin-xxx
 | Beta | `http://<服务器IP>:8084` | 仅内网访问 |
 | OpenAI | `http://<服务器IP>:8083` | 仅内网访问 |
 
-> 以下接口文档中，`${BASE}` 代表环境基础地址，`${KEY}` 代表用户提供的 admin token。
+> 以下接口文档中，`${BASE}` 代表环境基础地址，`${KEY}` 代表 `.env` 中的 `ADMIN_API_KEY`。操作前执行 `source .env` 或 `export KEY=$ADMIN_API_KEY` 加载。
 
 ---
 
