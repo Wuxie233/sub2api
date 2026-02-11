@@ -65,6 +65,10 @@ func (h *OpsHandler) GetConcurrencyStats(c *gin.Context) {
 
 // GetUserConcurrencyStats returns real-time concurrency usage for all active users.
 // GET /api/v1/admin/ops/user-concurrency
+//
+// Query params:
+// - platform: optional, filter users by allowed platform
+// - group_id: optional, filter users by allowed group
 func (h *OpsHandler) GetUserConcurrencyStats(c *gin.Context) {
 	if h.opsService == nil {
 		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
@@ -84,7 +88,18 @@ func (h *OpsHandler) GetUserConcurrencyStats(c *gin.Context) {
 		return
 	}
 
-	users, collectedAt, err := h.opsService.GetUserConcurrencyStats(c.Request.Context())
+	platformFilter := strings.TrimSpace(c.Query("platform"))
+	var groupID *int64
+	if v := strings.TrimSpace(c.Query("group_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = &id
+	}
+
+	users, collectedAt, err := h.opsService.GetUserConcurrencyStats(c.Request.Context(), platformFilter, groupID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

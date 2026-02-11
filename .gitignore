@@ -78,6 +78,7 @@ Desktop.ini
 # ===================
 tmp/
 temp/
+logs/
 *.tmp
 *.temp
 *.log
@@ -130,3 +131,11 @@ deploy/docker-compose.override.yml
 vite.config.js
 docs/*
 .serena/
+
+# ===================
+# 压测工具
+# ===================
+tools/loadtest/
+# Antigravity Manager
+Antigravity-Manager/
+antigravity_projectid_fix.patch
