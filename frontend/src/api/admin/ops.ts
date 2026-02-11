@@ -366,16 +366,8 @@ export async function getConcurrencyStats(platform?: string, groupId?: number | 
   return data
 }
 
-export async function getUserConcurrencyStats(platform?: string, groupId?: number | null): Promise<OpsUserConcurrencyStatsResponse> {
-  const params: Record<string, any> = {}
-  if (platform) {
-    params.platform = platform
-  }
-  if (typeof groupId === 'number' && groupId > 0) {
-    params.group_id = groupId
-  }
-
-  const { data } = await apiClient.get<OpsUserConcurrencyStatsResponse>('/admin/ops/user-concurrency', { params })
+export async function getUserConcurrencyStats(): Promise<OpsUserConcurrencyStatsResponse> {
+  const { data } = await apiClient.get<OpsUserConcurrencyStatsResponse>('/admin/ops/user-concurrency')
   return data
 }
 
