@@ -509,6 +509,378 @@ docker stats sub2api
 
 ---
 
+## Admin API 接口文档
+
+### 认证方式
+
+所有 Admin API 通过 `x-api-key` 请求头传递 Admin API Key 认证。
+
+```
+x-api-key: admin-xxx
+```
+
+> **使用说明**：用户提供 admin token 后，直接将其作为 `x-api-key` 的值使用。Token 格式为 `admin-` + 64 位十六进制字符，在管理后台 `设置 > Admin API Key` 中生成。**请勿将实际 token 写入文档或代码中。**
+
+### 环境地址
+
+| 环境 | 基础地址 | 说明 |
+|------|----------|------|
+| 正式 | `https://clicodeplus.com` | 生产环境 |
+| Beta | `http://<服务器IP>:8084` | 仅内网访问 |
+| OpenAI | `http://<服务器IP>:8083` | 仅内网访问 |
+
+> 以下接口文档中，`${BASE}` 代表环境基础地址，`${KEY}` 代表用户提供的 admin token。
+
+---
+
+### 1. 账号管理
+
+#### 1.1 获取账号列表
+
+```
+GET /api/v1/admin/accounts
+```
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `platform` | string | 否 | 平台筛选：`antigravity` / `anthropic` / `openai` / `gemini` |
+| `type` | string | 否 | 账号类型：`oauth` / `api_key` / `cookie` |
+| `status` | string | 否 | 状态：`active` / `disabled` / `error` |
+| `search` | string | 否 | 搜索关键词（名称、备注） |
+| `page` | int | 否 | 页码，默认 1 |
+| `page_size` | int | 否 | 每页数量，默认 20 |
+
+```bash
+curl -s "${BASE}/api/v1/admin/accounts?platform=antigravity&page=1&page_size=100" \
+  -H "x-api-key: ${KEY}"
+```
+
+**响应**：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [{"id": 1, "name": "xxx@gmail.com", "platform": "antigravity", "status": "active", ...}],
+    "total": 66
+  }
+}
+```
+
+#### 1.2 获取账号详情
+
+```
+GET /api/v1/admin/accounts/:id
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/accounts/1" -H "x-api-key: ${KEY}"
+```
+
+#### 1.3 测试账号连接
+
+```
+POST /api/v1/admin/accounts/:id/test
+```
+
+**请求体**（JSON，可选）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `model_id` | string | 否 | 指定测试模型，如 `claude-opus-4-6`；不传则使用默认模型 |
+
+**响应格式**：SSE（Server-Sent Events）流
+
+```bash
+curl -N -X POST "${BASE}/api/v1/admin/accounts/1/test" \
+  -H "x-api-key: ${KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "claude-opus-4-6"}'
+```
+
+**SSE 事件类型**：
+
+| type | 字段 | 说明 |
+|------|------|------|
+| `test_start` | `model` | 测试开始，返回测试模型名 |
+| `content` | `text` | 模型响应内容（流式文本片段） |
+| `test_end` | `success`, `error` | 测试结束，`success=true` 表示成功 |
+| `error` | `text` | 错误信息 |
+
+#### 1.4 清除账号限流
+
+```
+POST /api/v1/admin/accounts/:id/clear-rate-limit
+```
+
+```bash
+curl -X POST "${BASE}/api/v1/admin/accounts/1/clear-rate-limit" \
+  -H "x-api-key: ${KEY}"
+```
+
+#### 1.5 清除账号错误状态
+
+```
+POST /api/v1/admin/accounts/:id/clear-error
+```
+
+```bash
+curl -X POST "${BASE}/api/v1/admin/accounts/1/clear-error" \
+  -H "x-api-key: ${KEY}"
+```
+
+#### 1.6 获取账号可用模型
+
+```
+GET /api/v1/admin/accounts/:id/models
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/accounts/1/models" -H "x-api-key: ${KEY}"
+```
+
+#### 1.7 刷新 OAuth Token
+
+```
+POST /api/v1/admin/accounts/:id/refresh
+```
+
+```bash
+curl -X POST "${BASE}/api/v1/admin/accounts/1/refresh" -H "x-api-key: ${KEY}"
+```
+
+#### 1.8 刷新账号等级
+
+```
+POST /api/v1/admin/accounts/:id/refresh-tier
+```
+
+```bash
+curl -X POST "${BASE}/api/v1/admin/accounts/1/refresh-tier" -H "x-api-key: ${KEY}"
+```
+
+#### 1.9 获取账号统计
+
+```
+GET /api/v1/admin/accounts/:id/stats
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/accounts/1/stats" -H "x-api-key: ${KEY}"
+```
+
+#### 1.10 获取账号用量
+
+```
+GET /api/v1/admin/accounts/:id/usage
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/accounts/1/usage" -H "x-api-key: ${KEY}"
+```
+
+#### 1.11 批量测试账号（脚本）
+
+批量测试指定平台所有账号的指定模型连通性：
+
+```bash
+# 用户需提供：BASE（环境地址）、KEY（admin token）、MODEL（测试模型）
+ACCOUNT_IDS=$(curl -s "${BASE}/api/v1/admin/accounts?platform=antigravity&page=1&page_size=100" \
+  -H "x-api-key: ${KEY}" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for item in data['data']['items']:
+    print(f\"{item['id']}|{item['name']}\")
+")
+
+while IFS='|' read -r ID NAME; do
+    echo "测试账号 ID=${ID} (${NAME})..."
+    RESPONSE=$(curl -s --max-time 60 -N \
+      -X POST "${BASE}/api/v1/admin/accounts/${ID}/test" \
+      -H "x-api-key: ${KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"model_id\": \"${MODEL}\"}" 2>&1)
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        echo "  ✅ 成功"
+    elif echo "$RESPONSE" | grep -q '"type":"content"'; then
+        echo "  ✅ 成功（有内容响应）"
+    else
+        ERROR_MSG=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | tail -1)
+        echo "  ❌ 失败: ${ERROR_MSG}"
+    fi
+done <<< "$ACCOUNT_IDS"
+```
+
+---
+
+### 2. 运维监控
+
+#### 2.1 并发统计
+
+```
+GET /api/v1/admin/ops/concurrency
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/concurrency" -H "x-api-key: ${KEY}"
+```
+
+#### 2.2 账号可用性
+
+```
+GET /api/v1/admin/ops/account-availability
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/account-availability" -H "x-api-key: ${KEY}"
+```
+
+#### 2.3 实时流量摘要
+
+```
+GET /api/v1/admin/ops/realtime-traffic
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/realtime-traffic" -H "x-api-key: ${KEY}"
+```
+
+#### 2.4 请求错误列表
+
+```
+GET /api/v1/admin/ops/request-errors
+```
+
+**查询参数**：`page`、`page_size`
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/request-errors?page=1&page_size=50" \
+  -H "x-api-key: ${KEY}"
+```
+
+#### 2.5 上游错误列表
+
+```
+GET /api/v1/admin/ops/upstream-errors
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/upstream-errors?page=1&page_size=50" \
+  -H "x-api-key: ${KEY}"
+```
+
+#### 2.6 仪表板概览
+
+```
+GET /api/v1/admin/ops/dashboard/overview
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/ops/dashboard/overview" -H "x-api-key: ${KEY}"
+```
+
+---
+
+### 3. 系统设置
+
+#### 3.1 获取系统设置
+
+```
+GET /api/v1/admin/settings
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/settings" -H "x-api-key: ${KEY}"
+```
+
+#### 3.2 更新系统设置
+
+```
+PUT /api/v1/admin/settings
+```
+
+```bash
+curl -X PUT "${BASE}/api/v1/admin/settings" \
+  -H "x-api-key: ${KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{ ... }'
+```
+
+#### 3.3 Admin API Key 状态（脱敏）
+
+```
+GET /api/v1/admin/settings/admin-api-key
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/settings/admin-api-key" -H "x-api-key: ${KEY}"
+```
+
+---
+
+### 4. 用户管理
+
+#### 4.1 用户列表
+
+```
+GET /api/v1/admin/users
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/users?page=1&page_size=20" -H "x-api-key: ${KEY}"
+```
+
+#### 4.2 用户详情
+
+```
+GET /api/v1/admin/users/:id
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/users/1" -H "x-api-key: ${KEY}"
+```
+
+#### 4.3 更新用户余额
+
+```
+POST /api/v1/admin/users/:id/balance
+```
+
+```bash
+curl -X POST "${BASE}/api/v1/admin/users/1/balance" \
+  -H "x-api-key: ${KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 100, "reason": "充值"}'
+```
+
+---
+
+### 5. 分组管理
+
+#### 5.1 分组列表
+
+```
+GET /api/v1/admin/groups
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/groups" -H "x-api-key: ${KEY}"
+```
+
+#### 5.2 所有分组（不分页）
+
+```
+GET /api/v1/admin/groups/all
+```
+
+```bash
+curl -s "${BASE}/api/v1/admin/groups/all" -H "x-api-key: ${KEY}"
+```
+
+---
+
 ## 注意事项
 
 1. **前端必须打包进镜像**：使用 `docker build` 在构建服务器（`us-asaki-root`）上构建，Dockerfile 会自动编译前端并 embed 到后端二进制中，构建完成后通过 `docker save | docker load` 传输到生产服务器（`clicodeplus`）
