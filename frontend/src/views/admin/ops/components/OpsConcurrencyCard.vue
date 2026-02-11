@@ -122,6 +122,7 @@ const platformRows = computed((): SummaryRow[] => {
       available_accounts: availableAccounts,
       rate_limited_accounts: safeNumber(avail.rate_limit_count),
 
+
       error_accounts: safeNumber(avail.error_count),
       total_concurrency: totalConcurrency,
       used_concurrency: usedConcurrency,
@@ -161,7 +162,6 @@ const groupRows = computed((): SummaryRow[] => {
         total_accounts: totalAccounts,
         available_accounts: availableAccounts,
         rate_limited_accounts: safeNumber(avail.rate_limit_count),
-  
         error_accounts: safeNumber(avail.error_count),
         total_concurrency: totalConcurrency,
         used_concurrency: usedConcurrency,
@@ -265,7 +265,7 @@ async function loadData() {
   try {
     if (showByUser.value) {
       // 用户视图模式只加载用户并发数据
-      const userData = await opsAPI.getUserConcurrencyStats()
+      const userData = await opsAPI.getUserConcurrencyStats(props.platformFilter, props.groupIdFilter)
       userConcurrency.value = userData
     } else {
       // 常规模式加载账号/平台/分组数据
@@ -301,6 +301,14 @@ watch(
   }
 )
 
+// 过滤条件变化时重新加载数据
+watch(
+  [() => props.platformFilter, () => props.groupIdFilter],
+  () => {
+    loadData()
+  }
+)
+
 function getLoadBarClass(loadPct: number): string {
   if (loadPct >= 90) return 'bg-red-500 dark:bg-red-600'
   if (loadPct >= 70) return 'bg-orange-500 dark:bg-orange-600'
@@ -327,6 +335,7 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(minutes / 60)
   return `${hours}h`
 }
+
 
 
 watch(
