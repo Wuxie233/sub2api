@@ -113,6 +113,26 @@ func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *
 		return "", errors.New("access_token not found in credentials")
 	}
 
+	// 如果账号还没有 project_id，优先尝试在线补齐，避免请求 daily/sandbox 时出现
+	// "Invalid project resource name projects/"。
+	if strings.TrimSpace(account.GetCredential("project_id")) == "" && p.antigravityOAuthService != nil {
+		if tokenInfo, err := p.antigravityOAuthService.RefreshAccountToken(ctx, account); err == nil {
+			newCredentials := p.antigravityOAuthService.BuildAccountCredentials(tokenInfo)
+			for k, v := range account.Credentials {
+				if _, exists := newCredentials[k]; !exists {
+					newCredentials[k] = v
+				}
+			}
+			account.Credentials = newCredentials
+			if updateErr := p.accountRepo.Update(ctx, account); updateErr != nil {
+				log.Printf("[AntigravityTokenProvider] Failed to persist project_id补齐: %v", updateErr)
+			}
+			if refreshed := strings.TrimSpace(account.GetCredential("access_token")); refreshed != "" {
+				accessToken = refreshed
+			}
+		}
+	}
+
 	// 3. 存入缓存（验证版本后再写入，避免异步刷新任务与请求线程的竞态条件）
 	if p.tokenCache != nil {
 		latestAccount, isStale := CheckTokenVersion(ctx, account, p.accountRepo)

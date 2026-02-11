@@ -136,3 +136,5 @@ docs/*
 # 压测工具
 # ===================
 tools/loadtest/
+# Antigravity Manager
+Antigravity-Manager/
