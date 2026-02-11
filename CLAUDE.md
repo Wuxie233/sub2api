@@ -552,6 +552,18 @@ docker stats sub2api
 
 ## Admin API 接口文档
 
+### ⚠️ API 操作流程规范
+
+当收到操作正式环境 Web 界面的新需求，但文档中未记录对应 API 接口时，**必须按以下流程执行**：
+
+1. **探索接口**：通过代码库搜索路由定义（`backend/internal/server/routes/`）、Handler（`backend/internal/handler/admin/`）和请求结构体，确定正确的 API 端点、请求方法、请求体格式
+2. **更新文档**：将新发现的接口补充到本文档的 Admin API 接口文档章节中，包含端点、参数说明和 curl 示例
+3. **执行操作**：根据最新文档中记录的接口完成用户需求
+
+> **目的**：避免每次遇到相同需求都重复探索代码库，确保 API 文档持续完善，后续操作可直接查阅文档执行。
+
+---
+
 ### 认证方式
 
 所有 Admin API 通过 `x-api-key` 请求头传递 Admin API Key 认证。
@@ -722,7 +734,70 @@ GET /api/v1/admin/accounts/:id/usage
 curl -s "${BASE}/api/v1/admin/accounts/1/usage" -H "x-api-key: ${KEY}"
 ```
 
-#### 1.11 批量测试账号（脚本）
+#### 1.11 更新单个账号
+
+```
+PUT /api/v1/admin/accounts/:id
+```
+
+**请求体**（JSON，所有字段均为可选，仅传需要更新的字段）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | 账号名称 |
+| `notes` | *string | 备注 |
+| `type` | string | 类型：`oauth` / `setup-token` / `apikey` / `upstream` |
+| `credentials` | object | 凭证信息 |
+| `extra` | object | 额外配置 |
+| `proxy_id` | *int64 | 代理 ID |
+| `concurrency` | *int | 并发数 |
+| `priority` | *int | 优先级（默认 50） |
+| `rate_multiplier` | *float64 | 速率倍数 |
+| `status` | string | 状态：`active` / `inactive` |
+| `group_ids` | *[]int64 | 分组 ID 列表 |
+| `expires_at` | *int64 | 过期时间戳 |
+| `auto_pause_on_expired` | *bool | 过期后自动暂停 |
+
+> 使用指针类型（`*`）的字段可以区分"未提供"和"设置为零值"。
+
+```bash
+# 示例：更新账号优先级为 100
+curl -X PUT "${BASE}/api/v1/admin/accounts/1" \
+  -H "x-api-key: ${KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"priority": 100}'
+```
+
+#### 1.12 批量更新账号
+
+```
+POST /api/v1/admin/accounts/bulk-update
+```
+
+**请求体**（JSON）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `account_ids` | []int64 | **是** | 要更新的账号 ID 列表 |
+| `priority` | *int | 否 | 优先级 |
+| `concurrency` | *int | 否 | 并发数 |
+| `rate_multiplier` | *float64 | 否 | 速率倍数 |
+| `status` | string | 否 | 状态：`active` / `inactive` / `error` |
+| `schedulable` | *bool | 否 | 是否可调度 |
+| `group_ids` | *[]int64 | 否 | 分组 ID 列表 |
+| `proxy_id` | *int64 | 否 | 代理 ID |
+| `credentials` | object | 否 | 凭证信息（批量覆盖） |
+| `extra` | object | 否 | 额外配置（批量覆盖） |
+
+```bash
+# 示例：批量设置多个账号优先级为 100
+curl -X POST "${BASE}/api/v1/admin/accounts/bulk-update" \
+  -H "x-api-key: ${KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"account_ids": [1, 2, 3], "priority": 100}'
+```
+
+#### 1.13 批量测试账号（脚本）
 
 批量测试指定平台所有账号的指定模型连通性：
 
