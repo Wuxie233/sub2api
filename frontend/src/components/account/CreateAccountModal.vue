@@ -1285,9 +1285,9 @@
         </div>
       </div>
 
-      <!-- Intercept Warmup Requests (Anthropic only) -->
+      <!-- Intercept Warmup Requests (Anthropic/Antigravity) -->
       <div
-        v-if="form.platform === 'anthropic'"
+        v-if="form.platform === 'anthropic' || form.platform === 'antigravity'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2303,8 +2303,8 @@ watch(
       antigravityModelMappings.value = []
       antigravityModelRestrictionMode.value = 'mapping'
     }
-    // Reset Anthropic-specific settings when switching to other platforms
-    if (newPlatform !== 'anthropic') {
+    // Reset Anthropic/Antigravity-specific settings when switching to other platforms
+    if (newPlatform !== 'anthropic' && newPlatform !== 'antigravity') {
       interceptWarmupRequests.value = false
     }
     // Reset OAuth states
