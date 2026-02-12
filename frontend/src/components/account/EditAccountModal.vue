@@ -994,6 +994,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
+import { useMixedChannelWarning } from '@/composables/useMixedChannelWarning'
 import {
   getPresetMappingsByPlatform,
   commonErrorCodes,
@@ -1060,10 +1061,9 @@ const antigravityModelMappings = ref<ModelMapping[]>([])
 const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 
-// Mixed channel warning dialog state
-const showMixedChannelWarning = ref(false)
-const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(null)
-const pendingUpdatePayload = ref<Record<string, unknown> | null>(null)
+const mixedChannelWarning = useMixedChannelWarning()
+const showMixedChannelWarning = mixedChannelWarning.show
+const mixedChannelWarningDetails = mixedChannelWarning.details
 
 // Quota control state (Anthropic OAuth/SetupToken only)
 const windowCostEnabled = ref(false)
@@ -1525,11 +1525,13 @@ const parseDateTimeLocal = parseDateTimeLocalInput
 
 // Methods
 const handleClose = () => {
+  mixedChannelWarning.cancel()
   emit('close')
 }
 
 const handleSubmit = async () => {
   if (!props.account) return
+  const accountID = props.account.id
 
   submitting.value = true
   const updatePayload: Record<string, unknown> = { ...form }
@@ -1698,24 +1700,18 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    await adminAPI.accounts.update(props.account.id, updatePayload)
-    appStore.showSuccess(t('admin.accounts.accountUpdated'))
-    emit('updated')
-    handleClose()
-  } catch (error: any) {
-    // Handle 409 mixed_channel_warning - show confirmation dialog
-    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning') {
-      const details = error.response.data.details || {}
-      mixedChannelWarningDetails.value = {
-        groupName: details.group_name || 'Unknown',
-        currentPlatform: details.current_platform || 'Unknown',
-        otherPlatform: details.other_platform || 'Unknown'
+    await mixedChannelWarning.tryRequest(updatePayload, (p) => adminAPI.accounts.update(accountID, p), {
+      onSuccess: () => {
+        appStore.showSuccess(t('admin.accounts.accountUpdated'))
+        emit('updated')
+        handleClose()
+      },
+      onError: (error: any) => {
+        appStore.showError(error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToUpdate'))
       }
-      pendingUpdatePayload.value = updatePayload
-      showMixedChannelWarning.value = true
-    } else {
-      appStore.showError(error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToUpdate'))
-    }
+    })
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToUpdate'))
   } finally {
     submitting.value = false
   }
@@ -1723,27 +1719,15 @@ const handleSubmit = async () => {
 
 // Handle mixed channel warning confirmation
 const handleMixedChannelConfirm = async () => {
-  showMixedChannelWarning.value = false
-  if (pendingUpdatePayload.value && props.account) {
-    pendingUpdatePayload.value.confirm_mixed_channel_risk = true
-    submitting.value = true
-    try {
-      await adminAPI.accounts.update(props.account.id, pendingUpdatePayload.value)
-      appStore.showSuccess(t('admin.accounts.accountUpdated'))
-      emit('updated')
-      handleClose()
-    } catch (error: any) {
-      appStore.showError(error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToUpdate'))
-    } finally {
-      submitting.value = false
-      pendingUpdatePayload.value = null
-    }
+  submitting.value = true
+  try {
+    await mixedChannelWarning.confirm()
+  } finally {
+    submitting.value = false
   }
 }
 
 const handleMixedChannelCancel = () => {
-  showMixedChannelWarning.value = false
-  pendingUpdatePayload.value = null
-  mixedChannelWarningDetails.value = null
+  mixedChannelWarning.cancel()
 }
 </script>
