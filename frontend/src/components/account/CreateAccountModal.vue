@@ -2795,7 +2795,7 @@ const createAccountAndFinish = async (
   if (!applyTempUnschedConfig(credentials)) {
     return
   }
-  await adminAPI.accounts.create({
+  const payload: any = {
     name: form.name,
     notes: form.notes,
     platform,
@@ -2809,7 +2809,28 @@ const createAccountAndFinish = async (
     group_ids: form.group_ids,
     expires_at: form.expires_at,
     auto_pause_on_expired: autoPauseOnExpired.value
-  })
+  }
+
+  try {
+    await adminAPI.accounts.create(payload)
+  } catch (error: any) {
+    // Handle 409 mixed_channel_warning - show confirmation dialog
+    // Note: upstream Antigravity create path uses createAccountAndFinish directly, so mixed warning
+    // must be handled here as well (otherwise user only sees a generic "failed" toast).
+    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning') {
+      const details = error.response.data.details || {}
+      mixedChannelWarningDetails.value = {
+        groupName: details.group_name || 'Unknown',
+        currentPlatform: details.current_platform || 'Unknown',
+        otherPlatform: details.other_platform || 'Unknown'
+      }
+      pendingCreatePayload.value = payload
+      showMixedChannelWarning.value = true
+      return
+    }
+    throw error
+  }
+
   appStore.showSuccess(t('admin.accounts.accountCreated'))
   emit('created')
   handleClose()
