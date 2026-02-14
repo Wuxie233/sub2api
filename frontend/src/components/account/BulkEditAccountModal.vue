@@ -654,6 +654,7 @@ import Select from '@/components/common/Select.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { buildModelMappingObject as buildModelMappingPayload } from '@/composables/useModelWhitelist'
 
 interface Props {
   show: boolean
@@ -705,7 +706,7 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 
-// All models list (combined Anthropic + OpenAI)
+// All models list (combined Anthropic + OpenAI + Gemini)
 const allModels = [
   { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
   { value: 'claude-opus-4-5-20251101', label: 'Claude Opus 4.5' },
@@ -722,10 +723,15 @@ const allModels = [
   { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
   { value: 'gpt-5.1-2025-11-13', label: 'GPT-5.1' },
   { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
-  { value: 'gpt-5-2025-08-07', label: 'GPT-5' }
+  { value: 'gpt-5-2025-08-07', label: 'GPT-5' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' }
 ]
 
-// Preset mappings (combined Anthropic + OpenAI)
+// Preset mappings (combined Anthropic + OpenAI + Gemini)
 const presetMappings = [
   {
     label: 'Sonnet 4',
@@ -777,6 +783,24 @@ const presetMappings = [
     from: 'gpt-5.1-codex-max',
     to: 'gpt-5.1-codex',
     color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400'
+  },
+  {
+    label: 'Gemini Flash 2.0',
+    from: 'gemini-2.0-flash',
+    to: 'gemini-2.0-flash',
+    color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400'
+  },
+  {
+    label: 'Gemini 2.5 Flash',
+    from: 'gemini-2.5-flash',
+    to: 'gemini-2.5-flash',
+    color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-400'
+  },
+  {
+    label: 'Gemini 2.5 Pro',
+    from: 'gemini-2.5-pro',
+    to: 'gemini-2.5-pro',
+    color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400'
   }
 ]
 
@@ -866,23 +890,11 @@ const removeErrorCode = (code: number) => {
 }
 
 const buildModelMappingObject = (): Record<string, string> | null => {
-  const mapping: Record<string, string> = {}
-
-  if (modelRestrictionMode.value === 'whitelist') {
-    for (const model of allowedModels.value) {
-      mapping[model] = model
-    }
-  } else {
-    for (const m of modelMappings.value) {
-      const from = m.from.trim()
-      const to = m.to.trim()
-      if (from && to) {
-        mapping[from] = to
-      }
-    }
-  }
-
-  return Object.keys(mapping).length > 0 ? mapping : null
+  return buildModelMappingPayload(
+    modelRestrictionMode.value,
+    allowedModels.value,
+    modelMappings.value
+  )
 }
 
 const buildUpdatePayload = (): Record<string, unknown> | null => {

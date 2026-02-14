@@ -191,6 +191,22 @@ func TestHandleUpstreamError_429_NonModelRateLimit(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-5", repo.modelRateLimitCalls[0].modelKey)
 }
 
+func TestHandleUpstreamError_429_NonModelRateLimit_UsesMappedModelKey(t *testing.T) {
+	repo := &stubAntigravityAccountRepo{}
+	svc := &AntigravityGatewayService{accountRepo: repo}
+	account := &Account{ID: 20, Name: "acc-20", Platform: PlatformAntigravity}
+
+	// 429 + 普通限流响应（无 RATE_LIMIT_EXCEEDED reason）→ 走模型级限流兜底
+	// 场景：requestedModel 会被默认映射到 Antigravity 最终模型（例如 claude-opus-4-6 -> claude-opus-4-6-thinking）
+	body := buildGeminiRateLimitBody("5s")
+
+	result := svc.handleUpstreamError(context.Background(), "[test]", account, http.StatusTooManyRequests, http.Header{}, body, "claude-opus-4-6", 0, "", false)
+
+	require.Nil(t, result)
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, "claude-opus-4-6-thinking", repo.modelRateLimitCalls[0].modelKey)
+}
+
 // TestHandleUpstreamError_503_ModelCapacityExhausted 测试 503 模型容量不足场景
 // MODEL_CAPACITY_EXHAUSTED 时应等待重试，不切换账号
 func TestHandleUpstreamError_503_ModelCapacityExhausted(t *testing.T) {
