@@ -2545,7 +2545,7 @@ const splitTempUnschedKeywords = (value: string) => {
     .filter((item) => item.length > 0)
 }
 
-const isAntigravityAccount = (platform: AccountPlatform) => platform === 'antigravity'
+const needsMixedChannelCheck = (platform: AccountPlatform) => platform === 'antigravity' || platform === 'anthropic'
 
 const buildMixedChannelDetails = (resp?: CheckMixedChannelResponse) => {
   const details = resp?.details
@@ -2579,7 +2579,7 @@ const openMixedChannelDialog = (opts: {
 }
 
 const withAntigravityConfirmFlag = (payload: CreateAccountRequest): CreateAccountRequest => {
-  if (isAntigravityAccount(payload.platform) && antigravityMixedChannelConfirmed.value) {
+  if (needsMixedChannelCheck(payload.platform) && antigravityMixedChannelConfirmed.value) {
     return {
       ...payload,
       confirm_mixed_channel_risk: true
@@ -2591,7 +2591,7 @@ const withAntigravityConfirmFlag = (payload: CreateAccountRequest): CreateAccoun
 }
 
 const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<void>): Promise<boolean> => {
-  if (!isAntigravityAccount(form.platform)) {
+  if (!needsMixedChannelCheck(form.platform)) {
     return true
   }
   if (antigravityMixedChannelConfirmed.value) {
@@ -2628,7 +2628,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
     emit('created')
     handleClose()
   } catch (error: any) {
-    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning' && isAntigravityAccount(form.platform)) {
+    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning' && needsMixedChannelCheck(form.platform)) {
       openMixedChannelDialog({
         message: error.response?.data?.message,
         onConfirm: async () => {

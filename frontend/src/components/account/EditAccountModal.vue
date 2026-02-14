@@ -1535,7 +1535,7 @@ function toPositiveNumber(value: unknown) {
   return Math.trunc(num)
 }
 
-const isAntigravityAccount = () => props.account?.platform === 'antigravity'
+const needsMixedChannelCheck = () => props.account?.platform === 'antigravity' || props.account?.platform === 'anthropic'
 
 const buildMixedChannelDetails = (resp?: CheckMixedChannelResponse) => {
   const details = resp?.details
@@ -1569,7 +1569,7 @@ const openMixedChannelDialog = (opts: {
 }
 
 const withAntigravityConfirmFlag = (payload: Record<string, unknown>) => {
-  if (isAntigravityAccount() && antigravityMixedChannelConfirmed.value) {
+  if (needsMixedChannelCheck() && antigravityMixedChannelConfirmed.value) {
     return {
       ...payload,
       confirm_mixed_channel_risk: true
@@ -1581,7 +1581,7 @@ const withAntigravityConfirmFlag = (payload: Record<string, unknown>) => {
 }
 
 const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<void>): Promise<boolean> => {
-  if (!isAntigravityAccount()) {
+  if (!needsMixedChannelCheck()) {
     return true
   }
   if (antigravityMixedChannelConfirmed.value) {
@@ -1632,7 +1632,7 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
     emit('updated')
     handleClose()
   } catch (error: any) {
-    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning' && isAntigravityAccount()) {
+    if (error.response?.status === 409 && error.response?.data?.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
       openMixedChannelDialog({
         message: error.response?.data?.message,
         onConfirm: async () => {
