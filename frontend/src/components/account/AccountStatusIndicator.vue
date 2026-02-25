@@ -77,10 +77,10 @@
     </div>
 
     <!-- Model Rate Limit Indicators (Antigravity OAuth Smart Retry) -->
-    <div v-if="activeModelRateLimits.length > 0" class="grid grid-cols-3 gap-1">
+    <div v-if="activeModelRateLimits.length > 0" class="grid grid-cols-3 gap-0.5">
       <div v-for="item in activeModelRateLimits" :key="item.model" class="group relative">
         <span
-          class="inline-flex items-center gap-1 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+          class="inline-flex items-center gap-0.5 rounded bg-purple-100 px-1.5 py-px text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
         >
           <Icon name="exclamationTriangle" size="xs" :stroke-width="2" />
           {{ formatScopeName(item.model) }}
