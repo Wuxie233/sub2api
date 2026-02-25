@@ -122,7 +122,6 @@ AGENTS.md
 scripts
 .code-review-state
 openspec/
-docs/
 code-reviews/
 AGENTS.md
 backend/cmd/server/server
@@ -139,3 +138,6 @@ tools/loadtest/
 # Antigravity Manager
 Antigravity-Manager/
 antigravity_projectid_fix.patch
+.codex/
+frontend/coverage/
+aicodex
