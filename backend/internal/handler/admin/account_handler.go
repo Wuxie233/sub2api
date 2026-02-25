@@ -440,50 +440,6 @@ func (h *AccountHandler) CheckMixedChannel(c *gin.Context) {
 	response.Success(c, gin.H{"has_risk": false})
 }
 
-// CheckMixedChannel handles checking mixed channel risk for account-group binding.
-// POST /api/v1/admin/accounts/check-mixed-channel
-func (h *AccountHandler) CheckMixedChannel(c *gin.Context) {
-	var req CheckMixedChannelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
-		return
-	}
-
-	if len(req.GroupIDs) == 0 {
-		response.Success(c, gin.H{"has_risk": false})
-		return
-	}
-
-	accountID := int64(0)
-	if req.AccountID != nil {
-		accountID = *req.AccountID
-	}
-
-	err := h.adminService.CheckMixedChannelRisk(c.Request.Context(), accountID, req.Platform, req.GroupIDs)
-	if err != nil {
-		var mixedErr *service.MixedChannelError
-		if errors.As(err, &mixedErr) {
-			response.Success(c, gin.H{
-				"has_risk": true,
-				"error":    "mixed_channel_warning",
-				"message":  mixedErr.Error(),
-				"details": gin.H{
-					"group_id":         mixedErr.GroupID,
-					"group_name":       mixedErr.GroupName,
-					"current_platform": mixedErr.CurrentPlatform,
-					"other_platform":   mixedErr.OtherPlatform,
-				},
-			})
-			return
-		}
-
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	response.Success(c, gin.H{"has_risk": false})
-}
-
 // Create handles creating a new account
 // POST /api/v1/admin/accounts
 func (h *AccountHandler) Create(c *gin.Context) {

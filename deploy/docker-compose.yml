@@ -225,6 +225,8 @@ services:
 volumes:
   sub2api_data:
     driver: local
+  postgres_data:
+    driver: local
   redis_data:
     driver: local
 

@@ -423,7 +423,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 					).Error("gateway.record_usage_failed", zap.Error(err))
 				}
-			}(result, account, userAgent, clientIP, fs.ForceCacheBilling)
+			})
 			return
 		}
 	}
@@ -649,7 +649,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 					).Error("gateway.record_usage_failed", zap.Error(err))
 				}
-			}(result, account, userAgent, clientIP, fs.ForceCacheBilling)
+			})
 			return
 		}
 		if !retryWithFallback {
