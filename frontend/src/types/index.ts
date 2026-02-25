@@ -560,7 +560,6 @@ export interface ProxyQualityCheckResult {
 export interface GeminiCredentials {
   // API Key authentication
   api_key?: string
-  model_mapping?: Record<string, string>
 
   // OAuth authentication
   access_token?: string
