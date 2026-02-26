@@ -56,7 +56,8 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetNillableFallbackGroupID(groupIn.FallbackGroupID).
 		SetNillableFallbackGroupIDOnInvalidRequest(groupIn.FallbackGroupIDOnInvalidRequest).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
-		SetMcpXMLInject(groupIn.MCPXMLInject)
+		SetMcpXMLInject(groupIn.MCPXMLInject).
+		SetSimulateClaudeMaxEnabled(groupIn.SimulateClaudeMaxEnabled)
 
 	// 设置模型路由配置
 	if groupIn.ModelRouting != nil {
@@ -121,7 +122,8 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
-		SetMcpXMLInject(groupIn.MCPXMLInject)
+		SetMcpXMLInject(groupIn.MCPXMLInject).
+		SetSimulateClaudeMaxEnabled(groupIn.SimulateClaudeMaxEnabled)
 
 	// 处理 FallbackGroupID：nil 时清除，否则设置
 	if groupIn.FallbackGroupID != nil {

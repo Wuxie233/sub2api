@@ -95,6 +95,8 @@ type AdminGroup struct {
 
 	// MCP XML 协议注入（仅 antigravity 平台使用）
 	MCPXMLInject bool `json:"mcp_xml_inject"`
+	// Claude usage 模拟开关（仅管理员可见）
+	SimulateClaudeMaxEnabled bool `json:"simulate_claude_max_enabled"`
 
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes []string       `json:"supported_model_scopes"`
