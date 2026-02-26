@@ -99,7 +99,7 @@ git push origin main
 
 - 本地已配置 SSH 别名 `clicodeplus` 连接到生产服务器（运行服务）
 - 本地已配置 SSH 别名 `us-asaki-root` 连接到构建服务器（拉取代码、构建镜像）
-- 生产服务器部署目录：`/root/sub2api`（正式）、`/root/sub2api-beta`（测试）
+- 生产服务器部署目录：`/root/sub2api`（正式）、`/root/sub2api-beta`（测试）、`/root/sub2api-star`（Star）
 - 生产服务器使用 Docker Compose 部署
 - **镜像统一在构建服务器上构建**，避免生产服务器因编译占用 CPU/内存影响线上服务
 
@@ -120,10 +120,11 @@ git push origin main
 | 正式 | `/root/sub2api` | 8080 | `sub2api` | 0 | `sub2api` |
 | Beta | `/root/sub2api-beta` | 8084 | `beta` | 2 | `sub2api-beta` |
 | OpenAI | `/root/sub2api-openai` | 8083 | `openai` | 3 | `sub2api-openai` |
+| Star | `/root/sub2api-star` | 8086 | `star` | 4 | `sub2api-star` |
 
 ### 外部数据库与 Redis
 
-所有环境（正式、Beta、OpenAI）共用 `db.clicodeplus.com` 上的 **PostgreSQL 16** 和 **Redis 7**，不使用容器内数据库或 Redis。
+所有环境（正式、Beta、OpenAI、Star）共用 `db.clicodeplus.com` 上的 **PostgreSQL 16** 和 **Redis 7**，不使用容器内数据库或 Redis。
 
 **PostgreSQL**（端口 5432，TLS 加密，scram-sha-256 认证）：
 
@@ -132,6 +133,7 @@ git push origin main
 | 正式 | `sub2api` | `sub2api` |
 | Beta | `beta` | `beta` |
 | OpenAI | `openai` | `openai` |
+| Star | `star` | `star` |
 
 **Redis**（端口 6379，密码认证）：
 
@@ -140,6 +142,7 @@ git push origin main
 | 正式 | 0 |
 | Beta | 2 |
 | OpenAI | 3 |
+| Star | 4 |
 
 **配置方式**：
 - 数据库通过 `.env` 中的 `DATABASE_HOST`、`DATABASE_SSLMODE`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB` 配置
@@ -581,6 +584,7 @@ x-api-key: admin-xxx
 | 正式 | `https://clicodeplus.com` | 生产环境 |
 | Beta | `http://<服务器IP>:8084` | 仅内网访问 |
 | OpenAI | `http://<服务器IP>:8083` | 仅内网访问 |
+| Star | `https://hyntoken.com` | 独立环境 |
 
 > 以下接口文档中，`${BASE}` 代表环境基础地址，`${KEY}` 代表 `.env` 中的 `ADMIN_API_KEY`。操作前执行 `source .env` 或 `export KEY=$ADMIN_API_KEY` 加载。
 
