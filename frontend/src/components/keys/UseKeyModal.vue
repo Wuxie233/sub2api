@@ -575,7 +575,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gemini-3-pro-low': { name: 'Gemini 3 Pro Low' },
     'gemini-3-pro-high': { name: 'Gemini 3 Pro High' },
     'gemini-3-pro-preview': { name: 'Gemini 3 Pro Preview' },
-    'gemini-3-pro-image': { name: 'Gemini 3 Pro Image' }
+    'gemini-3.1-flash-image': { name: 'Gemini 3.1 Flash Image' }
   }
   const claudeModels = {
     'claude-opus-4-5-thinking': { name: 'Claude Opus 4.5 Thinking' },
