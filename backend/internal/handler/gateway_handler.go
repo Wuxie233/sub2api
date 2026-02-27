@@ -545,6 +545,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
 			// 转发请求 - 根据账号平台分流
+			c.Set("parsed_request", parsedReq)
 			var result *service.ForwardResult
 			requestCtx := c.Request.Context()
 			if fs.SwitchCount > 0 {

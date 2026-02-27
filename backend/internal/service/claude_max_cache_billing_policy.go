@@ -10,46 +10,7 @@ import (
 )
 
 type claudeMaxCacheBillingOutcome struct {
-	Simulated     bool
-	ForcedCache1H bool
-}
-
-func applyClaudeMaxCacheBillingPolicy(input *RecordUsageInput) claudeMaxCacheBillingOutcome {
-	var out claudeMaxCacheBillingOutcome
-	if !shouldApplyClaudeMaxBillingRules(input) {
-		return out
-	}
-
-	if input == nil || input.Result == nil {
-		return out
-	}
-	result := input.Result
-	usage := &result.Usage
-	accountID := int64(0)
-	if input.Account != nil {
-		accountID = input.Account.ID
-	}
-
-	if hasCacheCreationTokens(*usage) {
-		// Upstream already returned cache creation usage; keep original usage.
-		return out
-	}
-
-	if !shouldSimulateClaudeMaxUsage(input) {
-		return out
-	}
-	beforeInputTokens := usage.InputTokens
-	out.Simulated = safelyApplyClaudeMaxUsageSimulation(result, input.ParsedRequest)
-	if out.Simulated {
-		logger.LegacyPrintf("service.gateway", "simulate_claude_max_usage: model=%s account=%d input_tokens:%d->%d cache_creation_1h=%d",
-			result.Model,
-			accountID,
-			beforeInputTokens,
-			usage.InputTokens,
-			usage.CacheCreation1hTokens,
-		)
-	}
-	return out
+	Simulated bool
 }
 
 // detectClaudeMaxCacheBillingOutcomeForUsage only returns whether Claude Max policy
@@ -150,53 +111,16 @@ func shouldSimulateClaudeMaxUsage(input *RecordUsageInput) bool {
 }
 
 func shouldSimulateClaudeMaxUsageForUsage(usage ClaudeUsage, parsed *ParsedRequest) bool {
-	if !hasClaudeCacheSignals(parsed) {
-		return false
-	}
 	if usage.InputTokens <= 0 {
 		return false
 	}
 	if hasCacheCreationTokens(usage) {
 		return false
 	}
+	if !hasClaudeCacheSignals(parsed) {
+		return false
+	}
 	return true
-}
-
-func forceCacheCreationTo1H(usage *ClaudeUsage) bool {
-	if usage == nil || !hasCacheCreationTokens(*usage) {
-		return false
-	}
-
-	before5m := usage.CacheCreation5mTokens
-	before1h := usage.CacheCreation1hTokens
-	beforeAgg := usage.CacheCreationInputTokens
-
-	_ = applyCacheTTLOverride(usage, "1h")
-	total := usage.CacheCreation5mTokens + usage.CacheCreation1hTokens
-	if total <= 0 {
-		total = usage.CacheCreationInputTokens
-	}
-	if total <= 0 {
-		return false
-	}
-
-	usage.CacheCreation5mTokens = 0
-	usage.CacheCreation1hTokens = total
-	usage.CacheCreationInputTokens = total
-
-	return before5m != usage.CacheCreation5mTokens ||
-		before1h != usage.CacheCreation1hTokens ||
-		beforeAgg != usage.CacheCreationInputTokens
-}
-
-func safelyApplyClaudeMaxUsageSimulation(result *ForwardResult, parsed *ParsedRequest) (changed bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.LegacyPrintf("service.gateway", "simulate_claude_max_usage skipped: panic=%v", r)
-			changed = false
-		}
-	}()
-	return applyClaudeMaxUsageSimulation(result, parsed)
 }
 
 func safelyProjectUsageToClaudeMax1H(usage *ClaudeUsage, parsed *ParsedRequest) (changed bool) {
@@ -207,23 +131,6 @@ func safelyProjectUsageToClaudeMax1H(usage *ClaudeUsage, parsed *ParsedRequest) 
 		}
 	}()
 	return projectUsageToClaudeMax1H(usage, parsed)
-}
-
-func safelyForceCacheCreationTo1H(usage *ClaudeUsage) (changed bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.LegacyPrintf("service.gateway", "force_cache_creation_1h skipped: panic=%v", r)
-			changed = false
-		}
-	}()
-	return forceCacheCreationTo1H(usage)
-}
-
-func applyClaudeMaxUsageSimulation(result *ForwardResult, parsed *ParsedRequest) bool {
-	if result == nil {
-		return false
-	}
-	return projectUsageToClaudeMax1H(&result.Usage, parsed)
 }
 
 func projectUsageToClaudeMax1H(usage *ClaudeUsage, parsed *ParsedRequest) bool {

@@ -32,7 +32,7 @@ func newGatewayServiceForRecordUsageTest(repo UsageLogRepository) *GatewayServic
 	}
 }
 
-func TestRecordUsage_SimulateClaudeMaxEnabled_DoesNotProjectAndSkipsTTLOverride(t *testing.T) {
+func TestRecordUsage_SimulateClaudeMaxEnabled_ProjectsUsageAndSkipsTTLOverride(t *testing.T) {
 	repo := &usageLogRepoRecordUsageStub{inserted: true}
 	svc := newGatewayServiceForRecordUsageTest(repo)
 
@@ -195,5 +195,5 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationBypassesSimul
 	require.Equal(t, 120, log.CacheCreation5mTokens)
 	require.Equal(t, 0, log.CacheCreation1hTokens)
 	require.Equal(t, 120, log.CacheCreationTokens)
-	require.True(t, log.CacheTTLOverridden, "existing cache_creation should remain under normal account ttl flow")
+	require.True(t, log.CacheTTLOverridden, "existing cache_creation with SimulateClaudeMax enabled should apply account ttl override")
 }

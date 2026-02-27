@@ -5481,7 +5481,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	}
 
 	// Cache TTL Override: 重写 non-streaming 响应中的 cache_creation 分类
-	if account.IsCacheTTLOverrideEnabled() && !claudeMaxOutcome.Simulated && !claudeMaxOutcome.ForcedCache1H {
+	if account.IsCacheTTLOverrideEnabled() && !claudeMaxOutcome.Simulated {
 		overrideTarget := account.GetCacheTTLOverrideTarget()
 		if applyCacheTTLOverride(&response.Usage, overrideTarget) {
 			// 同步更新 body JSON 中的嵌套 cache_creation 对象
@@ -5623,18 +5623,18 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		result.Usage.InputTokens = 0
 	}
 
-	// Claude Max cache billing policy (group-level): RecordUsage only checks outcome.
+	// Claude Max cache billing policy (group-level):
+	// - GatewayService 路径: Forward 已改写 usage（含 cache tokens）→ apply 见到 cache tokens 跳过 → simulatedClaudeMax=true（通过第二条件）
+	// - Antigravity 路径: Forward 中 hook 改写了客户端 SSE，但 ForwardResult.Usage 是原始值 → apply 实际执行模拟 → simulatedClaudeMax=true
 	var apiKeyGroup *Group
 	if apiKey != nil {
 		apiKeyGroup = apiKey.Group
 	}
 	claudeMaxOutcome := detectClaudeMaxCacheBillingOutcomeForUsage(result.Usage, input.ParsedRequest, apiKeyGroup, result.Model)
 	simulatedClaudeMax := claudeMaxOutcome.Simulated
-	forcedClaudeMax1H := claudeMaxOutcome.ForcedCache1H
-
 	// Cache TTL Override: 确保计费时 token 分类与账号设置一致
-	cacheTTLOverridden := forcedClaudeMax1H
-	if account.IsCacheTTLOverrideEnabled() && !simulatedClaudeMax && !forcedClaudeMax1H {
+	cacheTTLOverridden := false
+	if account.IsCacheTTLOverrideEnabled() && !simulatedClaudeMax {
 		applyCacheTTLOverride(&result.Usage, account.GetCacheTTLOverrideTarget())
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
 	}
