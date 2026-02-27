@@ -5630,8 +5630,9 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 	if apiKey != nil {
 		apiKeyGroup = apiKey.Group
 	}
-	claudeMaxOutcome := detectClaudeMaxCacheBillingOutcomeForUsage(result.Usage, input.ParsedRequest, apiKeyGroup, result.Model)
-	simulatedClaudeMax := claudeMaxOutcome.Simulated
+	claudeMaxOutcome := applyClaudeMaxCacheBillingPolicyToUsage(&result.Usage, input.ParsedRequest, apiKeyGroup, result.Model, account.ID)
+	simulatedClaudeMax := claudeMaxOutcome.Simulated ||
+		(shouldApplyClaudeMaxBillingRulesForUsage(apiKeyGroup, result.Model, input.ParsedRequest) && hasCacheCreationTokens(result.Usage))
 	// Cache TTL Override: 确保计费时 token 分类与账号设置一致
 	cacheTTLOverridden := false
 	if account.IsCacheTTLOverrideEnabled() && !simulatedClaudeMax {

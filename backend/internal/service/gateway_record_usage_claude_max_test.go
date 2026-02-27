@@ -92,10 +92,10 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ProjectsUsageAndSkipsTTLOverride(t
 	require.NotNil(t, repo.last)
 
 	log := repo.last
-	require.Equal(t, 160, log.InputTokens)
-	require.Equal(t, 0, log.CacheCreationTokens)
+	require.Equal(t, 80, log.InputTokens)
+	require.Equal(t, 80, log.CacheCreationTokens)
 	require.Equal(t, 0, log.CacheCreation5mTokens)
-	require.Equal(t, 0, log.CacheCreation1hTokens)
+	require.Equal(t, 80, log.CacheCreation1hTokens)
 	require.False(t, log.CacheTTLOverridden, "simulate outcome should skip account ttl override")
 }
 
@@ -195,5 +195,5 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationBypassesSimul
 	require.Equal(t, 120, log.CacheCreation5mTokens)
 	require.Equal(t, 0, log.CacheCreation1hTokens)
 	require.Equal(t, 120, log.CacheCreationTokens)
-	require.True(t, log.CacheTTLOverridden, "existing cache_creation with SimulateClaudeMax enabled should apply account ttl override")
+	require.False(t, log.CacheTTLOverridden, "existing cache_creation with SimulateClaudeMax enabled should skip account ttl override")
 }
