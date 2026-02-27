@@ -32,7 +32,7 @@ func newGatewayServiceForRecordUsageTest(repo UsageLogRepository) *GatewayServic
 	}
 }
 
-func TestRecordUsage_SimulateClaudeMaxEnabled_ProjectsAndSkipsTTLOverride(t *testing.T) {
+func TestRecordUsage_SimulateClaudeMaxEnabled_DoesNotProjectAndSkipsTTLOverride(t *testing.T) {
 	repo := &usageLogRepoRecordUsageStub{inserted: true}
 	svc := newGatewayServiceForRecordUsageTest(repo)
 
@@ -92,12 +92,11 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ProjectsAndSkipsTTLOverride(t *tes
 	require.NotNil(t, repo.last)
 
 	log := repo.last
-	total := log.InputTokens + log.CacheCreation5mTokens + log.CacheCreation1hTokens
-	require.Equal(t, 160, total, "token 总量应保持不变")
-	require.Greater(t, log.CacheCreation1hTokens, 0, "应映射为 1h cache creation")
-	require.Equal(t, 0, log.CacheCreation5mTokens, "模拟成功后不应再被 TTL override 改写为 5m")
-	require.Equal(t, log.CacheCreation1hTokens, log.CacheCreationTokens, "聚合 cache_creation_tokens 应与 1h 一致")
-	require.False(t, log.CacheTTLOverridden, "模拟成功时应跳过 TTL override 标记")
+	require.Equal(t, 160, log.InputTokens)
+	require.Equal(t, 0, log.CacheCreationTokens)
+	require.Equal(t, 0, log.CacheCreation5mTokens)
+	require.Equal(t, 0, log.CacheCreation1hTokens)
+	require.False(t, log.CacheTTLOverridden, "simulate outcome should skip account ttl override")
 }
 
 func TestRecordUsage_SimulateClaudeMaxDisabled_AppliesTTLOverride(t *testing.T) {
@@ -144,12 +143,12 @@ func TestRecordUsage_SimulateClaudeMaxDisabled_AppliesTTLOverride(t *testing.T) 
 
 	log := repo.last
 	require.Equal(t, 120, log.CacheCreationTokens)
-	require.Equal(t, 120, log.CacheCreation5mTokens, "关闭模拟时应执行 TTL override 到 5m")
+	require.Equal(t, 120, log.CacheCreation5mTokens)
 	require.Equal(t, 0, log.CacheCreation1hTokens)
-	require.True(t, log.CacheTTLOverridden, "TTL override 生效时应打标")
+	require.True(t, log.CacheTTLOverridden)
 }
 
-func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationForce1H(t *testing.T) {
+func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationBypassesSimulation(t *testing.T) {
 	repo := &usageLogRepoRecordUsageStub{inserted: true}
 	svc := newGatewayServiceForRecordUsageTest(repo)
 
@@ -192,9 +191,9 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationForce1H(t *te
 	require.NotNil(t, repo.last)
 
 	log := repo.last
-	require.Equal(t, 20, log.InputTokens, "existing cache creation should not project input tokens")
-	require.Equal(t, 0, log.CacheCreation5mTokens, "existing cache creation should be forced to 1h")
-	require.Equal(t, 120, log.CacheCreation1hTokens)
+	require.Equal(t, 20, log.InputTokens)
+	require.Equal(t, 120, log.CacheCreation5mTokens)
+	require.Equal(t, 0, log.CacheCreation1hTokens)
 	require.Equal(t, 120, log.CacheCreationTokens)
-	require.True(t, log.CacheTTLOverridden, "force-to-1h should mark cache ttl overridden")
+	require.True(t, log.CacheTTLOverridden, "existing cache_creation should remain under normal account ttl flow")
 }

@@ -3709,6 +3709,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	// 处理正常响应
+	ctx = withClaudeMaxResponseRewriteContext(ctx, c, parsed)
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
@@ -5105,6 +5106,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	needModelReplace := originalModel != mappedModel
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
+	skipAccountTTLOverride := false
 
 	pendingEventLines := make([]string, 0, 4)
 
@@ -5164,17 +5166,25 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if msg, ok := event["message"].(map[string]any); ok {
 				if u, ok := msg["usage"].(map[string]any); ok {
 					reconcileCachedTokens(u)
+					claudeMaxOutcome := applyClaudeMaxSimulationToUsageJSONMap(ctx, u, originalModel, account.ID)
+					if claudeMaxOutcome.Simulated {
+						skipAccountTTLOverride = true
+					}
 				}
 			}
 		}
 		if eventType == "message_delta" {
 			if u, ok := event["usage"].(map[string]any); ok {
 				reconcileCachedTokens(u)
+				claudeMaxOutcome := applyClaudeMaxSimulationToUsageJSONMap(ctx, u, originalModel, account.ID)
+				if claudeMaxOutcome.Simulated {
+					skipAccountTTLOverride = true
+				}
 			}
 		}
 
 		// Cache TTL Override: 重写 SSE 事件中的 cache_creation 分类
-		if account.IsCacheTTLOverrideEnabled() {
+		if account.IsCacheTTLOverrideEnabled() && !skipAccountTTLOverride {
 			overrideTarget := account.GetCacheTTLOverrideTarget()
 			if eventType == "message_start" {
 				if msg, ok := event["message"].(map[string]any); ok {
@@ -5465,8 +5475,13 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 		}
 	}
 
+	claudeMaxOutcome := applyClaudeMaxSimulationToUsage(ctx, &response.Usage, originalModel, account.ID)
+	if claudeMaxOutcome.Simulated {
+		body = rewriteClaudeUsageJSONBytes(body, response.Usage)
+	}
+
 	// Cache TTL Override: 重写 non-streaming 响应中的 cache_creation 分类
-	if account.IsCacheTTLOverrideEnabled() {
+	if account.IsCacheTTLOverrideEnabled() && !claudeMaxOutcome.Simulated && !claudeMaxOutcome.ForcedCache1H {
 		overrideTarget := account.GetCacheTTLOverrideTarget()
 		if applyCacheTTLOverride(&response.Usage, overrideTarget) {
 			// 同步更新 body JSON 中的嵌套 cache_creation 对象
@@ -5608,9 +5623,12 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		result.Usage.InputTokens = 0
 	}
 
-	// Claude Max cache billing policy (group-level): force existing cache creation to 1h,
-	// otherwise simulate projection only when request carries cache signals.
-	claudeMaxOutcome := applyClaudeMaxCacheBillingPolicy(input)
+	// Claude Max cache billing policy (group-level): RecordUsage only checks outcome.
+	var apiKeyGroup *Group
+	if apiKey != nil {
+		apiKeyGroup = apiKey.Group
+	}
+	claudeMaxOutcome := detectClaudeMaxCacheBillingOutcomeForUsage(result.Usage, input.ParsedRequest, apiKeyGroup, result.Model)
 	simulatedClaudeMax := claudeMaxOutcome.Simulated
 	forcedClaudeMax1H := claudeMaxOutcome.ForcedCache1H
 
