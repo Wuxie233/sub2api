@@ -50,8 +50,18 @@ func TestRecordUsage_SimulateClaudeMaxEnabled_ProjectsAndSkipsTTLOverride(t *tes
 			Model: "claude-sonnet-4",
 			Messages: []any{
 				map[string]any{
-					"role":    "user",
-					"content": "please summarize the logs and provide root cause analysis",
+					"role": "user",
+					"content": []any{
+						map[string]any{
+							"type":          "text",
+							"text":          "long cached context for prior turns",
+							"cache_control": map[string]any{"type": "ephemeral"},
+						},
+						map[string]any{
+							"type": "text",
+							"text": "please summarize the logs and provide root cause analysis",
+						},
+					},
 				},
 			},
 		},
@@ -137,4 +147,54 @@ func TestRecordUsage_SimulateClaudeMaxDisabled_AppliesTTLOverride(t *testing.T) 
 	require.Equal(t, 120, log.CacheCreation5mTokens, "关闭模拟时应执行 TTL override 到 5m")
 	require.Equal(t, 0, log.CacheCreation1hTokens)
 	require.True(t, log.CacheTTLOverridden, "TTL override 生效时应打标")
+}
+
+func TestRecordUsage_SimulateClaudeMaxEnabled_ExistingCacheCreationForce1H(t *testing.T) {
+	repo := &usageLogRepoRecordUsageStub{inserted: true}
+	svc := newGatewayServiceForRecordUsageTest(repo)
+
+	groupID := int64(13)
+	input := &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "req-sim-3",
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+			Usage: ClaudeUsage{
+				InputTokens:              20,
+				CacheCreationInputTokens: 120,
+				CacheCreation5mTokens:    120,
+			},
+		},
+		APIKey: &APIKey{
+			ID:      3,
+			GroupID: &groupID,
+			Group: &Group{
+				ID:                       groupID,
+				Platform:                 PlatformAnthropic,
+				RateMultiplier:           1,
+				SimulateClaudeMaxEnabled: true,
+			},
+		},
+		User: &User{ID: 4},
+		Account: &Account{
+			ID:       5,
+			Platform: PlatformAnthropic,
+			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"cache_ttl_override_enabled": true,
+				"cache_ttl_override_target":  "5m",
+			},
+		},
+	}
+
+	err := svc.RecordUsage(context.Background(), input)
+	require.NoError(t, err)
+	require.NotNil(t, repo.last)
+
+	log := repo.last
+	require.Equal(t, 20, log.InputTokens, "existing cache creation should not project input tokens")
+	require.Equal(t, 0, log.CacheCreation5mTokens, "existing cache creation should be forced to 1h")
+	require.Equal(t, 120, log.CacheCreation1hTokens)
+	require.Equal(t, 120, log.CacheCreationTokens)
+	require.True(t, log.CacheTTLOverridden, "force-to-1h should mark cache ttl overridden")
 }
