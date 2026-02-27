@@ -241,6 +241,7 @@ func (s *APIKeyService) snapshotFromAPIKey(apiKey *APIKey) *APIKeyAuthSnapshot {
 			ModelRouting:                    apiKey.Group.ModelRouting,
 			ModelRoutingEnabled:             apiKey.Group.ModelRoutingEnabled,
 			MCPXMLInject:                    apiKey.Group.MCPXMLInject,
+			SimulateClaudeMaxEnabled:        apiKey.Group.SimulateClaudeMaxEnabled,
 			SupportedModelScopes:            apiKey.Group.SupportedModelScopes,
 		}
 	}
@@ -295,6 +296,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			ModelRouting:                    snapshot.Group.ModelRouting,
 			ModelRoutingEnabled:             snapshot.Group.ModelRoutingEnabled,
 			MCPXMLInject:                    snapshot.Group.MCPXMLInject,
+			SimulateClaudeMaxEnabled:        snapshot.Group.SimulateClaudeMaxEnabled,
 			SupportedModelScopes:            snapshot.Group.SupportedModelScopes,
 		}
 	}
