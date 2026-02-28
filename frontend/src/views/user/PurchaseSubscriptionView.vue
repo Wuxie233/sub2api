@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <AppLayout>
     <div class="purchase-page-layout">
       <div class="card flex-1 min-h-0 overflow-hidden">
@@ -117,7 +117,17 @@ function buildPurchaseUrl(
     url.searchParams.set(PURCHASE_UI_MODE_QUERY_KEY, PURCHASE_UI_MODE_EMBEDDED)
     return url.toString()
   } catch {
-    return baseUrl
+    const params: string[] = []
+    if (userId) {
+      params.push(`${PURCHASE_USER_ID_QUERY_KEY}=${encodeURIComponent(String(userId))}`)
+    }
+    if (authToken) {
+      params.push(`${PURCHASE_AUTH_TOKEN_QUERY_KEY}=${encodeURIComponent(authToken)}`)
+    }
+    params.push(`${PURCHASE_THEME_QUERY_KEY}=${encodeURIComponent(theme)}`)
+    params.push(`${PURCHASE_UI_MODE_QUERY_KEY}=${encodeURIComponent(PURCHASE_UI_MODE_EMBEDDED)}`)
+    const separator = baseUrl.includes('?') ? '&' : '?'
+    return `${baseUrl}${separator}${params.join('&')}`
   }
 }
 
