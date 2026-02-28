@@ -80,6 +80,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 
 const PURCHASE_USER_ID_QUERY_KEY = 'user_id'
+const PURCHASE_AUTH_TOKEN_QUERY_KEY = 'token'
 const PURCHASE_THEME_QUERY_KEY = 'theme'
 const PURCHASE_UI_MODE_QUERY_KEY = 'ui_mode'
 const PURCHASE_UI_MODE_EMBEDDED = 'embedded'
@@ -97,12 +98,20 @@ function detectTheme(): 'light' | 'dark' {
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
 }
 
-function buildPurchaseUrl(baseUrl: string, userId?: number, theme: 'light' | 'dark' = 'light'): string {
+function buildPurchaseUrl(
+  baseUrl: string,
+  userId?: number,
+  authToken?: string | null,
+  theme: 'light' | 'dark' = 'light',
+): string {
   if (!baseUrl) return baseUrl
   try {
     const url = new URL(baseUrl)
     if (userId) {
       url.searchParams.set(PURCHASE_USER_ID_QUERY_KEY, String(userId))
+    }
+    if (authToken) {
+      url.searchParams.set(PURCHASE_AUTH_TOKEN_QUERY_KEY, authToken)
     }
     url.searchParams.set(PURCHASE_THEME_QUERY_KEY, theme)
     url.searchParams.set(PURCHASE_UI_MODE_QUERY_KEY, PURCHASE_UI_MODE_EMBEDDED)
@@ -111,6 +120,9 @@ function buildPurchaseUrl(baseUrl: string, userId?: number, theme: 'light' | 'da
     const params: string[] = []
     if (userId) {
       params.push(`${PURCHASE_USER_ID_QUERY_KEY}=${encodeURIComponent(String(userId))}`)
+    }
+    if (authToken) {
+      params.push(`${PURCHASE_AUTH_TOKEN_QUERY_KEY}=${encodeURIComponent(authToken)}`)
     }
     params.push(`${PURCHASE_THEME_QUERY_KEY}=${encodeURIComponent(theme)}`)
     params.push(`${PURCHASE_UI_MODE_QUERY_KEY}=${encodeURIComponent(PURCHASE_UI_MODE_EMBEDDED)}`)
@@ -121,7 +133,7 @@ function buildPurchaseUrl(baseUrl: string, userId?: number, theme: 'light' | 'da
 
 const purchaseUrl = computed(() => {
   const baseUrl = (appStore.cachedPublicSettings?.purchase_subscription_url || '').trim()
-  return buildPurchaseUrl(baseUrl, authStore.user?.id, purchaseTheme.value)
+  return buildPurchaseUrl(baseUrl, authStore.user?.id, authStore.token, purchaseTheme.value)
 })
 
 const isValidUrl = computed(() => {
