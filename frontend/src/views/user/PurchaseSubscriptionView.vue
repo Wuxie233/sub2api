@@ -1,30 +1,6 @@
 ﻿<template>
   <AppLayout>
     <div class="purchase-page-layout">
-      <div class="flex items-start justify-between gap-4">
-        <div>
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ t('purchase.title') }}
-          </h2>
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
-            {{ t('purchase.description') }}
-          </p>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <a
-            v-if="isValidUrl"
-            :href="purchaseUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-secondary btn-sm"
-          >
-            <Icon name="externalLink" size="sm" class="mr-1.5" :stroke-width="2" />
-            {{ t('purchase.openInNewTab') }}
-          </a>
-        </div>
-      </div>
-
       <div class="card flex-1 min-h-0 overflow-hidden">
         <div v-if="loading" class="flex h-full items-center justify-center py-12">
           <div
@@ -71,6 +47,15 @@
         </div>
 
         <div v-else class="purchase-embed-shell">
+          <a
+            :href="purchaseUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-sm purchase-open-fab"
+          >
+            <Icon name="externalLink" size="sm" class="mr-1.5" :stroke-width="2" />
+            {{ t('purchase.openInNewTab') }}
+          </a>
           <iframe
             :src="purchaseUrl"
             class="purchase-embed-frame"
@@ -176,14 +161,20 @@ onUnmounted(() => {
 
 <style scoped>
 .purchase-page-layout {
-  @apply flex flex-col gap-6;
+  @apply flex flex-col;
   height: calc(100vh - 64px - 4rem);
 }
 
 .purchase-embed-shell {
+  @apply relative;
   @apply h-full w-full overflow-auto rounded-2xl;
   @apply bg-gradient-to-b from-gray-50 to-white dark:from-dark-900 dark:to-dark-950;
   @apply p-3 sm:p-4;
+}
+
+.purchase-open-fab {
+  @apply absolute right-3 top-3 z-10;
+  @apply shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80;
 }
 
 .purchase-embed-frame {
