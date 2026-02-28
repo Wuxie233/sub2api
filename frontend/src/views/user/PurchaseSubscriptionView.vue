@@ -179,9 +179,9 @@ onUnmounted(() => {
 
 .purchase-embed-shell {
   @apply relative;
-  @apply h-full w-full overflow-auto rounded-2xl;
+  @apply h-full w-full overflow-hidden rounded-2xl;
   @apply bg-gradient-to-b from-gray-50 to-white dark:from-dark-900 dark:to-dark-950;
-  @apply p-3 sm:p-4;
+  @apply p-0;
 }
 
 .purchase-open-fab {
@@ -191,20 +191,12 @@ onUnmounted(() => {
 
 .purchase-embed-frame {
   display: block;
-  margin: 0 auto;
-  width: min(100%, 440px);
-  height: 840px;
+  margin: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  border-radius: 0;
+  box-shadow: none;
   background: transparent;
-}
-
-@media (max-width: 640px) {
-  .purchase-embed-frame {
-    width: 100%;
-    height: 780px;
-    border-radius: 12px;
-  }
 }
 </style>
