@@ -280,7 +280,8 @@ export default {
     github: 'GitHub',
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
-    docs: 'Docs'
+    docs: 'Docs',
+    sora: 'Sora Studio'
   },
 
   // Auth
