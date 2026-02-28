@@ -110,7 +110,7 @@ func TestAccountHandlerCreateMixedChannelConflictSimplifiedResponse(t *testing.T
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "mixed_channel_warning", resp["error"])
-	require.Contains(t, resp["message"], "mixed_channel_warning")
+	require.Contains(t, resp["message"], "claude-max")
 	_, hasDetails := resp["details"]
 	_, hasRequireConfirmation := resp["require_confirmation"]
 	require.False(t, hasDetails)
@@ -139,7 +139,7 @@ func TestAccountHandlerUpdateMixedChannelConflictSimplifiedResponse(t *testing.T
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "mixed_channel_warning", resp["error"])
-	require.Contains(t, resp["message"], "mixed_channel_warning")
+	require.Contains(t, resp["message"], "claude-max")
 	_, hasDetails := resp["details"]
 	_, hasRequireConfirmation := resp["require_confirmation"]
 	require.False(t, hasDetails)
