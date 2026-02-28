@@ -80,11 +80,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
+import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
+
+const PURCHASE_USER_ID_QUERY_KEY = 'user_id'
 
 const loading = ref(false)
 
@@ -92,8 +96,21 @@ const purchaseEnabled = computed(() => {
   return appStore.cachedPublicSettings?.purchase_subscription_enabled ?? false
 })
 
+function buildPurchaseUrl(baseUrl: string, userId?: number): string {
+  if (!baseUrl || !userId) return baseUrl
+  try {
+    const url = new URL(baseUrl)
+    url.searchParams.set(PURCHASE_USER_ID_QUERY_KEY, String(userId))
+    return url.toString()
+  } catch {
+    const separator = baseUrl.includes('?') ? '&' : '?'
+    return `${baseUrl}${separator}${PURCHASE_USER_ID_QUERY_KEY}=${encodeURIComponent(String(userId))}`
+  }
+}
+
 const purchaseUrl = computed(() => {
-  return (appStore.cachedPublicSettings?.purchase_subscription_url || '').trim()
+  const baseUrl = (appStore.cachedPublicSettings?.purchase_subscription_url || '').trim()
+  return buildPurchaseUrl(baseUrl, authStore.user?.id)
 })
 
 const isValidUrl = computed(() => {
