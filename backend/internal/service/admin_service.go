@@ -1370,9 +1370,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 
-	// 预加载账号平台信息（混合渠道检查或 Sora 同步需要）。
+	// 预加载账号平台信息（混合渠道检查需要）。
 	platformByID := map[int64]string{}
-	groupAccountsByID := map[int64][]Account{}
 	if needMixedChannelCheck {
 		accounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
