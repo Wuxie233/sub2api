@@ -69,20 +69,6 @@
           </div>
         </div>
 
-        <!-- Turnstile Widget for Submit -->
-        <div v-if="turnstileEnabled && turnstileSiteKey && !showResendTurnstile">
-          <TurnstileWidget
-            ref="submitTurnstileRef"
-            :site-key="turnstileSiteKey"
-            @verify="onSubmitTurnstileVerify"
-            @expire="onSubmitTurnstileExpire"
-            @error="onSubmitTurnstileError"
-          />
-          <p v-if="errors.submitTurnstile" class="input-error-text mt-2 text-center">
-            {{ errors.submitTurnstile }}
-          </p>
-        </div>
-
         <!-- Turnstile Widget for Resend -->
         <div v-if="turnstileEnabled && turnstileSiteKey && showResendTurnstile">
           <TurnstileWidget
@@ -115,7 +101,7 @@
         </transition>
 
         <!-- Submit Button -->
-        <button type="submit" :disabled="isLoading || !verifyCode || (turnstileEnabled && !submitTurnstileToken)" class="btn btn-primary w-full">
+        <button type="submit" :disabled="isLoading || !verifyCode" class="btn btn-primary w-full">
           <svg
             v-if="isLoading"
             class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
@@ -223,10 +209,6 @@ const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const siteName = ref<string>('Sub2API')
 
-// Turnstile for submit
-const submitTurnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
-const submitTurnstileToken = ref<string>('')
-
 // Turnstile for resend
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 const resendTurnstileToken = ref<string>('')
@@ -234,8 +216,7 @@ const showResendTurnstile = ref<boolean>(false)
 
 const errors = ref({
   code: '',
-  turnstile: '',
-  submitTurnstile: ''
+  turnstile: ''
 })
 
 // ==================== Lifecycle ====================
@@ -302,21 +283,6 @@ function startCountdown(seconds: number): void {
 }
 
 // ==================== Turnstile Handlers ====================
-
-function onSubmitTurnstileVerify(token: string): void {
-  submitTurnstileToken.value = token
-  errors.value.submitTurnstile = ''
-}
-
-function onSubmitTurnstileExpire(): void {
-  submitTurnstileToken.value = ''
-  errors.value.submitTurnstile = 'Verification expired, please try again'
-}
-
-function onSubmitTurnstileError(): void {
-  submitTurnstileToken.value = ''
-  errors.value.submitTurnstile = 'Verification failed, please try again'
-}
 
 function onTurnstileVerify(token: string): void {
   resendTurnstileToken.value = token
@@ -419,7 +385,7 @@ async function handleVerify(): Promise<void> {
       email: email.value,
       password: password.value,
       verify_code: verifyCode.value.trim(),
-      turnstile_token: submitTurnstileToken.value || undefined,
+      turnstile_token: initialTurnstileToken.value || undefined,
       promo_code: promoCode.value || undefined,
       invitation_code: invitationCode.value || undefined
     })
@@ -433,12 +399,6 @@ async function handleVerify(): Promise<void> {
     // Redirect to dashboard
     await router.push('/dashboard')
   } catch (error: unknown) {
-    // Reset submit turnstile on error
-    if (submitTurnstileRef.value) {
-      submitTurnstileRef.value.reset()
-      submitTurnstileToken.value = ''
-    }
-
     const err = error as { message?: string; response?: { data?: { detail?: string } } }
 
     if (err.response?.data?.detail) {
