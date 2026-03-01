@@ -113,8 +113,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Turnstile 验证 — 始终执行，防止绕过
-	// TODO: 确认前端在提交邮箱验证码注册时也传递了 turnstile_token
+	// Turnstile 验证 — 始终执行，防止机器人自动化注册
 	if err := h.authService.VerifyTurnstile(c.Request.Context(), req.TurnstileToken, ip.GetClientIP(c)); err != nil {
 		response.ErrorFrom(c, err)
 		return
