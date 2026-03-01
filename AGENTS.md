@@ -1328,3 +1328,65 @@ gofmt -l ./...
 - **golangci-lint**：未使用的变量/导入 → 删除或使用 `_` 忽略
 - **test 失败**：mock 函数签名不一致 → 同步更新 mock
 - **gosec**：安全漏洞 → 根据提示修复或添加例外
+
+---
+
+## PR 描述格式规范
+
+所有 PR 描述使用中英文同步（先中文、后英文），包含以下三个部分：
+
+### 模板
+
+```markdown
+## 背景 / Background
+
+<一两句说明问题现状或触发原因>
+
+<English version of the background>
+
+---
+
+## 目的 / Purpose
+
+<本次改动要解决的问题或达到的目标>
+
+<English version of the purpose>
+
+---
+
+## 改动内容 / Changes
+
+### 后端 / Backend
+
+- **改动点 1**：说明
+- **改动点 2**：说明
+
+---
+
+- **Change 1**: description
+- **Change 2**: description
+
+### 前端 / Frontend
+
+- **改动点 1**：说明
+- **改动点 2**：说明
+
+---
+
+- **Change 1**: description
+- **Change 2**: description
+
+---
+
+## 截图 / Screenshot（可选）
+
+ASCII 示意图或实际截图
+```
+
+### 规范要点
+
+- **标题**：使用 conventional commits 格式，如 `feat(scope): description`
+- **中英文顺序**：同一段落先中文后英文，用空行分隔，不用 `---` 分割同段内容
+- **改动分类**：按 Backend / Frontend / Config 等模块分组，先列中文要点再列英文要点
+- **截图/示意图**：有 UI 变动时必须附上，可用 ASCII 示意布局
+- **目标分支**：提交到 `touwaeriol/sub2api` 的 `main` 分支
