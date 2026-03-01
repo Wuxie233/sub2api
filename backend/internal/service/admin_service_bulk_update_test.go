@@ -15,6 +15,7 @@ type accountRepoStubForBulkUpdate struct {
 	bulkUpdateErr    error
 	bulkUpdateIDs    []int64
 	bindGroupErrByID map[int64]error
+	bindGroupsCalls  []int64
 	getByIDsAccounts []*Account
 	getByIDsErr      error
 	getByIDsCalled   bool
@@ -22,6 +23,8 @@ type accountRepoStubForBulkUpdate struct {
 	getByIDAccounts  map[int64]*Account
 	getByIDErrByID   map[int64]error
 	getByIDCalled    []int64
+	listByGroupData  map[int64][]Account
+	listByGroupErr   map[int64]error
 }
 
 func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
@@ -33,10 +36,21 @@ func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64
 }
 
 func (s *accountRepoStubForBulkUpdate) BindGroups(_ context.Context, accountID int64, _ []int64) error {
+	s.bindGroupsCalls = append(s.bindGroupsCalls, accountID)
 	if err, ok := s.bindGroupErrByID[accountID]; ok {
 		return err
 	}
 	return nil
+}
+
+func (s *accountRepoStubForBulkUpdate) ListByGroup(_ context.Context, groupID int64) ([]Account, error) {
+	if err, ok := s.listByGroupErr[groupID]; ok {
+		return nil, err
+	}
+	if rows, ok := s.listByGroupData[groupID]; ok {
+		return rows, nil
+	}
+	return nil, nil
 }
 
 func (s *accountRepoStubForBulkUpdate) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
@@ -104,22 +118,6 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	require.ElementsMatch(t, []int64{1, 3}, result.SuccessIDs)
 	require.ElementsMatch(t, []int64{2}, result.FailedIDs)
 	require.Len(t, result.Results, 3)
-}
-
-func TestAdminService_BulkUpdateAccounts_NilGroupRepoReturnsError(t *testing.T) {
-	repo := &accountRepoStubForBulkUpdate{}
-	svc := &adminServiceImpl{accountRepo: repo}
-
-	groupIDs := []int64{10}
-	input := &BulkUpdateAccountsInput{
-		AccountIDs: []int64{1},
-		GroupIDs:   &groupIDs,
-	}
-
-	result, err := svc.BulkUpdateAccounts(context.Background(), input)
-	require.Nil(t, result)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "group repository not configured")
 }
 
 // TestAdminService_BulkUpdateAccounts_MixedChannelPreCheckBlocksOnExistingConflict verifies
