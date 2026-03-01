@@ -1,7 +1,11 @@
 package server
 
 import (
+	"context"
 	"log"
+	"net/url"
+	"strings"
+	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -13,6 +17,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
+
+// extractOrigin returns the scheme+host origin from rawURL, or "" on error.
+func extractOrigin(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
 
 // SetupRouter 配置路由器中间件和路由
 func SetupRouter(
@@ -28,11 +45,33 @@ func SetupRouter(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) *gin.Engine {
+	// 缓存 purchase_subscription_url 的 origin，用于动态注入 CSP frame-src
+	var cachedPaymentOrigin atomic.Pointer[string]
+	empty := ""
+	cachedPaymentOrigin.Store(&empty)
+
+	refreshPaymentOrigin := func() {
+		settings, err := settingService.GetPublicSettings(context.Background())
+		if err == nil && settings.PurchaseSubscriptionEnabled {
+			origin := extractOrigin(settings.PurchaseSubscriptionURL)
+			cachedPaymentOrigin.Store(&origin)
+		} else {
+			e := ""
+			cachedPaymentOrigin.Store(&e)
+		}
+	}
+	refreshPaymentOrigin() // 启动时初始化
+
 	// 应用中间件
 	r.Use(middleware2.RequestLogger())
 	r.Use(middleware2.Logger())
 	r.Use(middleware2.CORS(cfg.CORS))
-	r.Use(middleware2.SecurityHeaders(cfg.Security.CSP))
+	r.Use(middleware2.SecurityHeaders(cfg.Security.CSP, func() string {
+		if p := cachedPaymentOrigin.Load(); p != nil {
+			return *p
+		}
+		return ""
+	}))
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {
@@ -40,11 +79,17 @@ func SetupRouter(
 		if err != nil {
 			log.Printf("Warning: Failed to create frontend server with settings injection: %v, using legacy mode", err)
 			r.Use(web.ServeEmbeddedFrontend())
+			settingService.SetOnUpdateCallback(refreshPaymentOrigin)
 		} else {
-			// Register cache invalidation callback
-			settingService.SetOnUpdateCallback(frontendServer.InvalidateCache)
+			// Register combined callback: invalidate HTML cache + refresh payment origin
+			settingService.SetOnUpdateCallback(func() {
+				frontendServer.InvalidateCache()
+				refreshPaymentOrigin()
+			})
 			r.Use(frontendServer.Middleware())
 		}
+	} else {
+		settingService.SetOnUpdateCallback(refreshPaymentOrigin)
 	}
 
 	// 注册路由
