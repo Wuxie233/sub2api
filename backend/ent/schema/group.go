@@ -100,6 +100,10 @@ func (Group) Fields() []ent.Field {
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 
+		// Sora 存储配额
+		field.Int64("sora_storage_quota_bytes").
+			Default(0),
+
 		field.Bool("claude_code_only").
 			Default(false).
 			Comment("allow Claude Code client only"),

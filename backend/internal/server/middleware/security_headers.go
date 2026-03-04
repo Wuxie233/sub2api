@@ -41,9 +41,9 @@ func GetNonceFromContext(c *gin.Context) string {
 }
 
 // SecurityHeaders sets baseline security headers for all responses.
-// getFrameSrc is an optional function that returns an extra origin to inject into frame-src;
+// getFrameSrcOrigins is an optional function that returns extra origins to inject into frame-src;
 // pass nil to disable dynamic frame-src injection.
-func SecurityHeaders(cfg config.CSPConfig, getFrameSrc func() string) gin.HandlerFunc {
+func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) gin.HandlerFunc {
 	policy := strings.TrimSpace(cfg.Policy)
 	if policy == "" {
 		policy = config.DefaultCSPPolicy
@@ -54,15 +54,21 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrc func() string) gin.Handle
 
 	return func(c *gin.Context) {
 		finalPolicy := policy
-		if getFrameSrc != nil {
-			if origin := getFrameSrc(); origin != "" {
-				finalPolicy = addToDirective(finalPolicy, "frame-src", origin)
+		if getFrameSrcOrigins != nil {
+			for _, origin := range getFrameSrcOrigins() {
+				if origin != "" {
+					finalPolicy = addToDirective(finalPolicy, "frame-src", origin)
+				}
 			}
 		}
 
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		if isAPIRoutePath(c) {
+			c.Next()
+			return
+		}
 
 		if cfg.Enabled {
 			// Generate nonce for this request
@@ -78,6 +84,18 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrc func() string) gin.Handle
 		}
 		c.Next()
 	}
+}
+
+func isAPIRoutePath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := c.Request.URL.Path
+	return strings.HasPrefix(path, "/v1/") ||
+		strings.HasPrefix(path, "/v1beta/") ||
+		strings.HasPrefix(path, "/antigravity/") ||
+		strings.HasPrefix(path, "/sora/") ||
+		strings.HasPrefix(path, "/responses")
 }
 
 // enhanceCSPPolicy ensures the CSP policy includes nonce support and Cloudflare Insights domain.

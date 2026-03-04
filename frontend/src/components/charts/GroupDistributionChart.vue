@@ -29,9 +29,9 @@
             >
               <td
                 class="max-w-[100px] truncate py-1.5 font-medium text-gray-900 dark:text-white"
-                :title="group.group_name"
+                :title="group.group_name || String(group.group_id)"
               >
-                {{ group.group_name }}
+                {{ group.group_name || t('admin.dashboard.noGroup') }}
               </td>
               <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
                 {{ formatNumber(group.requests) }}
@@ -93,7 +93,7 @@ const chartData = computed(() => {
   if (!props.groupStats?.length) return null
 
   return {
-    labels: props.groupStats.map((g) => g.group_name),
+    labels: props.groupStats.map((g) => g.group_name || String(g.group_id)),
     datasets: [
       {
         data: props.groupStats.map((g) => g.total_tokens),

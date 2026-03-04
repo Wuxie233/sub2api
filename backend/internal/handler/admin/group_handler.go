@@ -52,6 +52,8 @@ type CreateGroupRequest struct {
 	SimulateClaudeMaxEnabled *bool              `json:"simulate_claude_max_enabled"`
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes []string `json:"supported_model_scopes"`
+	// Sora 存储配额
+	SoraStorageQuotaBytes int64 `json:"sora_storage_quota_bytes"`
 	// 从指定分组复制账号（创建后自动绑定）
 	CopyAccountsFromGroupIDs []int64 `json:"copy_accounts_from_group_ids"`
 }
@@ -86,6 +88,8 @@ type UpdateGroupRequest struct {
 	SimulateClaudeMaxEnabled *bool              `json:"simulate_claude_max_enabled"`
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes *[]string `json:"supported_model_scopes"`
+	// Sora 存储配额
+	SoraStorageQuotaBytes *int64 `json:"sora_storage_quota_bytes"`
 	// 从指定分组复制账号（同步操作：先清空当前分组的账号绑定，再绑定源分组的账号）
 	CopyAccountsFromGroupIDs []int64 `json:"copy_accounts_from_group_ids"`
 }
@@ -201,6 +205,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		MCPXMLInject:                    req.MCPXMLInject,
 		SimulateClaudeMaxEnabled:        req.SimulateClaudeMaxEnabled,
 		SupportedModelScopes:            req.SupportedModelScopes,
+		SoraStorageQuotaBytes:           req.SoraStorageQuotaBytes,
 		CopyAccountsFromGroupIDs:        req.CopyAccountsFromGroupIDs,
 	})
 	if err != nil {
@@ -252,6 +257,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		MCPXMLInject:                    req.MCPXMLInject,
 		SimulateClaudeMaxEnabled:        req.SimulateClaudeMaxEnabled,
 		SupportedModelScopes:            req.SupportedModelScopes,
+		SoraStorageQuotaBytes:           req.SoraStorageQuotaBytes,
 		CopyAccountsFromGroupIDs:        req.CopyAccountsFromGroupIDs,
 	})
 	if err != nil {
