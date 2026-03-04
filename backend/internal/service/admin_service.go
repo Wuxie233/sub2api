@@ -434,10 +434,6 @@ type userGroupRateBatchReader interface {
 	GetByUserIDs(ctx context.Context, userIDs []int64) (map[int64]map[int64]float64, error)
 }
 
-type groupExistenceBatchReader interface {
-	ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error)
-}
-
 // NewAdminService creates a new AdminService
 func NewAdminService(
 	userRepo UserRepository,
