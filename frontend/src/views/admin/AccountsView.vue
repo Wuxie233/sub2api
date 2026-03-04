@@ -546,7 +546,7 @@ const {
   handlePageSizeChange: baseHandlePageSizeChange
 } = useTableLoader<Account, any>({
   fetchFn: adminAPI.accounts.list,
-  initialParams: { platform: '', type: '', status: '', group: '', search: '', lite: '1' }
+  initialParams: { platform: '', type: '', status: '', group: '', search: '' }
 })
 
 const resetAutoRefreshCache = () => {
