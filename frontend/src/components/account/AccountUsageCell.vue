@@ -278,11 +278,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { resolveCodexUsageWindow } from '@/utils/codexUsage'
+import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import UsageProgressBar from './UsageProgressBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 
@@ -291,6 +292,9 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+
+const unmounted = ref(false)
+onBeforeUnmount(() => { unmounted.value = true })
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -701,12 +705,30 @@ const loadUsage = async () => {
   error.value = null
 
   try {
-    usageInfo.value = await adminAPI.accounts.getUsage(props.account.id)
+    const fetchFn = () => adminAPI.accounts.getUsage(props.account.id)
+    let result: AccountUsageInfo
+    // Only throttle Anthropic OAuth/setup-token accounts to avoid upstream 429
+    if (
+      props.account.platform === 'anthropic' &&
+      (props.account.type === 'oauth' || props.account.type === 'setup-token')
+    ) {
+      result = await enqueueUsageRequest(
+        props.account.platform,
+        'claude_code',
+        props.account.proxy_id,
+        fetchFn
+      )
+    } else {
+      result = await fetchFn()
+    }
+    if (!unmounted.value) usageInfo.value = result
   } catch (e: any) {
-    error.value = t('common.error')
-    console.error('Failed to load usage:', e)
+    if (!unmounted.value) {
+      error.value = t('common.error')
+      console.error('Failed to load usage:', e)
+    }
   } finally {
-    loading.value = false
+    if (!unmounted.value) loading.value = false
   }
 }
 
