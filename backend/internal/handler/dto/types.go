@@ -133,6 +133,7 @@ type Account struct {
 	Extra              map[string]any `json:"extra"`
 	ProxyID            *int64         `json:"proxy_id"`
 	Concurrency        int            `json:"concurrency"`
+	LoadFactor         *int           `json:"load_factor,omitempty"`
 	Priority           int            `json:"priority"`
 	RateMultiplier     float64        `json:"rate_multiplier"`
 	Status             string         `json:"status"`
