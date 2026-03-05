@@ -111,6 +111,8 @@ type AdminGroup struct {
 
 	// MCP XML 协议注入（仅 antigravity 平台使用）
 	MCPXMLInject bool `json:"mcp_xml_inject"`
+	// Claude usage 模拟开关（仅管理员可见）
+	SimulateClaudeMaxEnabled bool `json:"simulate_claude_max_enabled"`
 
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes []string       `json:"supported_model_scopes"`
@@ -131,6 +133,7 @@ type Account struct {
 	Extra              map[string]any `json:"extra"`
 	ProxyID            *int64         `json:"proxy_id"`
 	Concurrency        int            `json:"concurrency"`
+	LoadFactor         *int           `json:"load_factor,omitempty"`
 	Priority           int            `json:"priority"`
 	RateMultiplier     float64        `json:"rate_multiplier"`
 	Status             string         `json:"status"`
@@ -184,6 +187,10 @@ type Account struct {
 	// 启用后将所有 cache creation tokens 归入指定的 TTL 类型计费
 	CacheTTLOverrideEnabled *bool   `json:"cache_ttl_override_enabled,omitempty"`
 	CacheTTLOverrideTarget  *string `json:"cache_ttl_override_target,omitempty"`
+
+	// API Key 账号配额限制
+	QuotaLimit *float64 `json:"quota_limit,omitempty"`
+	QuotaUsed  *float64 `json:"quota_used,omitempty"`
 
 	Proxy         *Proxy         `json:"proxy,omitempty"`
 	AccountGroups []AccountGroup `json:"account_groups,omitempty"`

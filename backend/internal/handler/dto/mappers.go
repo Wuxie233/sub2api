@@ -122,13 +122,14 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 		return nil
 	}
 	out := &AdminGroup{
-		Group:                groupFromServiceBase(g),
-		ModelRouting:         g.ModelRouting,
-		ModelRoutingEnabled:  g.ModelRoutingEnabled,
-		MCPXMLInject:         g.MCPXMLInject,
-		SupportedModelScopes: g.SupportedModelScopes,
-		AccountCount:         g.AccountCount,
-		SortOrder:            g.SortOrder,
+		Group:                    groupFromServiceBase(g),
+		ModelRouting:             g.ModelRouting,
+		ModelRoutingEnabled:      g.ModelRoutingEnabled,
+		MCPXMLInject:             g.MCPXMLInject,
+		SimulateClaudeMaxEnabled: g.SimulateClaudeMaxEnabled,
+		SupportedModelScopes:     g.SupportedModelScopes,
+		AccountCount:             g.AccountCount,
+		SortOrder:                g.SortOrder,
 	}
 	if len(g.AccountGroups) > 0 {
 		out.AccountGroups = make([]AccountGroup, 0, len(g.AccountGroups))
@@ -183,6 +184,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Extra:                   a.Extra,
 		ProxyID:                 a.ProxyID,
 		Concurrency:             a.Concurrency,
+		LoadFactor:              a.LoadFactor,
 		Priority:                a.Priority,
 		RateMultiplier:          a.BillingRateMultiplier(),
 		Status:                  a.Status,
@@ -245,6 +247,17 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 			out.CacheTTLOverrideEnabled = &enabled
 			target := a.GetCacheTTLOverrideTarget()
 			out.CacheTTLOverrideTarget = &target
+		}
+	}
+
+	// 提取 API Key 账号配额限制（仅 apikey 类型有效）
+	if a.Type == service.AccountTypeAPIKey {
+		if limit := a.GetQuotaLimit(); limit > 0 {
+			out.QuotaLimit = &limit
+		}
+		used := a.GetQuotaUsed()
+		if out.QuotaLimit != nil {
+			out.QuotaUsed = &used
 		}
 	}
 

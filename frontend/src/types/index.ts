@@ -395,6 +395,8 @@ export interface AdminGroup extends Group {
 
   // MCP XML 协议注入（仅 antigravity 平台使用）
   mcp_xml_inject: boolean
+  // Claude usage 模拟开关（仅 anthropic 平台使用）
+  simulate_claude_max_enabled: boolean
 
   // 支持的模型系列（仅 antigravity 平台使用）
   supported_model_scopes?: string[]
@@ -483,6 +485,7 @@ export interface CreateGroupRequest {
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
   mcp_xml_inject?: boolean
+  simulate_claude_max_enabled?: boolean
   supported_model_scopes?: string[]
   // 从指定分组复制账号
   copy_accounts_from_group_ids?: number[]
@@ -511,6 +514,7 @@ export interface UpdateGroupRequest {
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
   mcp_xml_inject?: boolean
+  simulate_claude_max_enabled?: boolean
   supported_model_scopes?: string[]
   copy_accounts_from_group_ids?: number[]
 }
@@ -653,6 +657,7 @@ export interface Account {
   } & Record<string, unknown>)
   proxy_id: number | null
   concurrency: number
+  load_factor?: number | null
   current_concurrency?: number // Real-time concurrency count from Redis
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
@@ -704,6 +709,10 @@ export interface Account {
   // 缓存 TTL 强制替换（仅 Anthropic OAuth/SetupToken 账号有效）
   cache_ttl_override_enabled?: boolean | null
   cache_ttl_override_target?: string | null
+
+  // API Key 账号配额限制
+  quota_limit?: number | null
+  quota_used?: number | null
 
   // 运行时状态（仅当启用对应限制时返回）
   current_window_cost?: number | null // 当前窗口费用
@@ -783,6 +792,7 @@ export interface CreateAccountRequest {
   extra?: Record<string, unknown>
   proxy_id?: number | null
   concurrency?: number
+  load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   group_ids?: number[]
@@ -799,6 +809,7 @@ export interface UpdateAccountRequest {
   extra?: Record<string, unknown>
   proxy_id?: number | null
   concurrency?: number
+  load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   schedulable?: boolean

@@ -650,10 +650,16 @@
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
           <input v-model.number="form.concurrency" type="number" min="1" class="input" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
+          <input v-model.number="form.load_factor" type="number" min="1"
+            class="input" :placeholder="String(form.concurrency || 1)" />
+          <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.priority') }}</label>
@@ -758,6 +764,9 @@
           </button>
         </div>
       </div>
+
+      <!-- API Key 账号配额限制 -->
+      <QuotaLimitCard v-if="account?.type === 'apikey'" v-model="editQuotaLimit" />
 
       <!-- OpenAI OAuth Codex 官方客户端限制开关 -->
       <div
@@ -1269,6 +1278,7 @@ import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
@@ -1386,6 +1396,7 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
+const editQuotaLimit = ref<number | null>(null)
 const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
   // TODO: ctx_pool 选项暂时隐藏，待测试完成后恢复
@@ -1465,6 +1476,7 @@ const form = reactive({
   notes: '',
   proxy_id: null as number | null,
   concurrency: 1,
+  load_factor: null as number | null,
   priority: 1,
   rate_multiplier: 1,
   status: 'active' as 'active' | 'inactive',
@@ -1498,6 +1510,7 @@ watch(
       form.notes = newAccount.notes || ''
       form.proxy_id = newAccount.proxy_id
       form.concurrency = newAccount.concurrency
+      form.load_factor = newAccount.load_factor ?? null
       form.priority = newAccount.priority
       form.rate_multiplier = newAccount.rate_multiplier ?? 1
       form.status = newAccount.status as 'active' | 'inactive'
@@ -1539,6 +1552,14 @@ watch(
       }
       if (newAccount.platform === 'anthropic' && newAccount.type === 'apikey') {
         anthropicPassthroughEnabled.value = extra?.anthropic_passthrough === true
+      }
+
+      // Load quota limit for apikey accounts
+      if (newAccount.type === 'apikey') {
+        const quotaVal = extra?.quota_limit as number | undefined
+        editQuotaLimit.value = (quotaVal && quotaVal > 0) ? quotaVal : null
+      } else {
+        editQuotaLimit.value = null
       }
 
       // Load antigravity model mapping (Antigravity 只支持映射模式)
@@ -2049,6 +2070,10 @@ const handleSubmit = async () => {
     if (form.expires_at === null) {
       updatePayload.expires_at = 0
     }
+    // load_factor: 空值/0/NaN 时发送 0（后端约定 0 = 清除）
+    if (!form.load_factor || form.load_factor <= 0) {
+      updatePayload.load_factor = 0
+    }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
 
     // For apikey type, handle credentials update
@@ -2188,8 +2213,11 @@ const handleSubmit = async () => {
       }
 
       // RPM limit settings
-      if (rpmLimitEnabled.value && baseRpm.value != null && baseRpm.value > 0) {
-        newExtra.base_rpm = baseRpm.value
+      if (rpmLimitEnabled.value) {
+        const DEFAULT_BASE_RPM = 15
+        newExtra.base_rpm = (baseRpm.value != null && baseRpm.value > 0)
+          ? baseRpm.value
+          : DEFAULT_BASE_RPM
         newExtra.rpm_strategy = rpmStrategy.value
         if (rpmStickyBuffer.value != null && rpmStickyBuffer.value > 0) {
           newExtra.rpm_sticky_buffer = rpmStickyBuffer.value
@@ -2280,6 +2308,19 @@ const handleSubmit = async () => {
         }
       }
 
+      updatePayload.extra = newExtra
+    }
+
+    // For apikey accounts, handle quota_limit in extra
+    if (props.account.type === 'apikey') {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
+        newExtra.quota_limit = editQuotaLimit.value
+      } else {
+        delete newExtra.quota_limit
+      }
       updatePayload.extra = newExtra
     }
 

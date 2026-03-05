@@ -1482,6 +1482,14 @@ export default {
         enabled: 'Enabled',
         disabled: 'Disabled'
       },
+      claudeMaxSimulation: {
+        title: 'Claude Max Usage Simulation',
+        tooltip:
+          'When enabled, for Claude models without upstream cache-write usage, the system deterministically maps tokens to a small input plus 1h cache creation while keeping total tokens unchanged.',
+        enabled: 'Enabled (simulate 1h cache)',
+        disabled: 'Disabled',
+        hint: 'Only token categories in usage billing logs are adjusted. No per-request mapping state is persisted.'
+      },
       supportedScopes: {
         title: 'Supported Model Families',
         tooltip: 'Select the model families this group supports. Unchecked families will not be routed to this group.',
@@ -1734,6 +1742,10 @@ export default {
           stickyExemptWarning: 'RPM limit (Sticky Exempt) - Approaching limit',
           stickyExemptOver: 'RPM limit (Sticky Exempt) - Over limit, sticky only'
         },
+        quota: {
+          exceeded: 'Quota exceeded, account paused',
+          normal: 'Quota normal'
+        },
       },
       tempUnschedulable: {
         title: 'Temp Unschedulable',
@@ -1779,6 +1791,14 @@ export default {
         }
       },
       clearRateLimit: 'Clear Rate Limit',
+      resetQuota: 'Reset Quota',
+      quotaLimit: 'Quota Limit',
+      quotaLimitPlaceholder: '0 means unlimited',
+      quotaLimitHint: 'Set max spending limit (USD). Account will be paused when reached. Changing limit won\'t reset usage.',
+      quotaLimitToggle: 'Enable Quota Limit',
+      quotaLimitToggleHint: 'When enabled, account will be paused when usage reaches the set limit',
+      quotaLimitAmount: 'Limit Amount',
+      quotaLimitAmountHint: 'Maximum spending limit (USD). Account will be auto-paused when reached. Changing limit won\'t reset usage.',
       testConnection: 'Test Connection',
       reAuthorize: 'Re-Authorize',
       refreshToken: 'Refresh Token',
@@ -1991,10 +2011,12 @@ export default {
       proxy: 'Proxy',
       noProxy: 'No Proxy',
       concurrency: 'Concurrency',
+      loadFactor: 'Load Factor',
+      loadFactorHint: 'Defaults to concurrency',
       priority: 'Priority',
       priorityHint: 'Lower value accounts are used first',
       billingRateMultiplier: 'Billing Rate Multiplier',
-      billingRateMultiplierHint: '>=0, 0 means free. Affects account billing only',
+      billingRateMultiplierHint: '0 = free, affects account billing only',
       expiresAt: 'Expires At',
       expiresAtHint: 'Leave empty for no expiration',
       higherPriorityFirst: 'Lower value means higher priority',

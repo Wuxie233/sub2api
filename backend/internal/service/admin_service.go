@@ -84,6 +84,7 @@ type AdminService interface {
 	DeleteRedeemCode(ctx context.Context, id int64) error
 	BatchDeleteRedeemCodes(ctx context.Context, ids []int64) (int64, error)
 	ExpireRedeemCode(ctx context.Context, id int64) (*RedeemCode, error)
+	ResetAccountQuota(ctx context.Context, id int64) error
 }
 
 // CreateUserInput represents input for creating a new user via admin operations.
@@ -137,9 +138,10 @@ type CreateGroupInput struct {
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
-	ModelRouting        map[string][]int64
-	ModelRoutingEnabled bool // 是否启用模型路由
-	MCPXMLInject        *bool
+	ModelRouting             map[string][]int64
+	ModelRoutingEnabled      bool // 是否启用模型路由
+	MCPXMLInject             *bool
+	SimulateClaudeMaxEnabled *bool
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes []string
 	// Sora 存储配额
@@ -173,9 +175,10 @@ type UpdateGroupInput struct {
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
-	ModelRouting        map[string][]int64
-	ModelRoutingEnabled *bool // 是否启用模型路由
-	MCPXMLInject        *bool
+	ModelRouting             map[string][]int64
+	ModelRoutingEnabled      *bool // 是否启用模型路由
+	MCPXMLInject             *bool
+	SimulateClaudeMaxEnabled *bool
 	// 支持的模型系列（仅 antigravity 平台使用）
 	SupportedModelScopes *[]string
 	// Sora 存储配额
@@ -195,6 +198,7 @@ type CreateAccountInput struct {
 	Concurrency        int
 	Priority           int
 	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor         *int
 	GroupIDs           []int64
 	ExpiresAt          *int64
 	AutoPauseOnExpired *bool
@@ -215,6 +219,7 @@ type UpdateAccountInput struct {
 	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
 	Priority              *int     // 使用指针区分"未提供"和"设置为0"
 	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor            *int
 	Status                string
 	GroupIDs              *[]int64
 	ExpiresAt             *int64
@@ -230,6 +235,7 @@ type BulkUpdateAccountsInput struct {
 	Concurrency    *int
 	Priority       *int
 	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor     *int
 	Status         string
 	Schedulable    *bool
 	GroupIDs       *[]int64
@@ -353,6 +359,10 @@ type ProxyExitInfoProber interface {
 	ProbeProxy(ctx context.Context, proxyURL string) (*ProxyExitInfo, int64, error)
 }
 
+type groupExistenceBatchReader interface {
+	ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error)
+}
+
 type proxyQualityTarget struct {
 	Target          string
 	URL             string
@@ -426,10 +436,6 @@ type adminServiceImpl struct {
 
 type userGroupRateBatchReader interface {
 	GetByUserIDs(ctx context.Context, userIDs []int64) (map[int64]map[int64]float64, error)
-}
-
-type groupExistenceBatchReader interface {
-	ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error)
 }
 
 // NewAdminService creates a new AdminService
@@ -847,6 +853,13 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if input.MCPXMLInject != nil {
 		mcpXMLInject = *input.MCPXMLInject
 	}
+	simulateClaudeMaxEnabled := false
+	if input.SimulateClaudeMaxEnabled != nil {
+		if platform != PlatformAnthropic && *input.SimulateClaudeMaxEnabled {
+			return nil, fmt.Errorf("simulate_claude_max_enabled only supported for anthropic groups")
+		}
+		simulateClaudeMaxEnabled = *input.SimulateClaudeMaxEnabled
+	}
 
 	// 如果指定了复制账号的源分组，先获取账号 ID 列表
 	var accountIDsToCopy []int64
@@ -903,6 +916,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
 		ModelRouting:                    input.ModelRouting,
 		MCPXMLInject:                    mcpXMLInject,
+		SimulateClaudeMaxEnabled:        simulateClaudeMaxEnabled,
 		SupportedModelScopes:            input.SupportedModelScopes,
 		SoraStorageQuotaBytes:           input.SoraStorageQuotaBytes,
 	}
@@ -1111,6 +1125,15 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.MCPXMLInject != nil {
 		group.MCPXMLInject = *input.MCPXMLInject
+	}
+	if input.SimulateClaudeMaxEnabled != nil {
+		if group.Platform != PlatformAnthropic && *input.SimulateClaudeMaxEnabled {
+			return nil, fmt.Errorf("simulate_claude_max_enabled only supported for anthropic groups")
+		}
+		group.SimulateClaudeMaxEnabled = *input.SimulateClaudeMaxEnabled
+	}
+	if group.Platform != PlatformAnthropic {
+		group.SimulateClaudeMaxEnabled = false
 	}
 
 	// 支持的模型系列（仅 antigravity 平台使用）
@@ -1413,6 +1436,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		}
 		account.RateMultiplier = input.RateMultiplier
 	}
+	if input.LoadFactor != nil && *input.LoadFactor > 0 {
+		account.LoadFactor = input.LoadFactor
+	}
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, err
 	}
@@ -1458,6 +1484,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Credentials = input.Credentials
 	}
 	if len(input.Extra) > 0 {
+		// 保留 quota_used，防止编辑账号时意外重置配额用量
+		if oldQuotaUsed, ok := account.Extra["quota_used"]; ok {
+			input.Extra["quota_used"] = oldQuotaUsed
+		}
 		account.Extra = input.Extra
 	}
 	if input.ProxyID != nil {
@@ -1482,6 +1512,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
 		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.LoadFactor != nil {
+		if *input.LoadFactor <= 0 {
+			account.LoadFactor = nil // 0 或负数表示清除
+		} else {
+			account.LoadFactor = input.LoadFactor
+		}
 	}
 	if input.Status != "" {
 		account.Status = input.Status
@@ -1615,6 +1652,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 	if input.RateMultiplier != nil {
 		repoUpdates.RateMultiplier = input.RateMultiplier
+	}
+	if input.LoadFactor != nil {
+		repoUpdates.LoadFactor = input.LoadFactor
 	}
 	if input.Status != "" {
 		repoUpdates.Status = &input.Status
@@ -2438,4 +2478,8 @@ type MixedChannelError struct {
 func (e *MixedChannelError) Error() string {
 	return fmt.Sprintf("mixed_channel_warning: Group '%s' contains both %s and %s accounts. Using mixed channels in the same context may cause thinking block signature validation issues, which will fallback to non-thinking mode for historical messages.",
 		e.GroupName, e.CurrentPlatform, e.OtherPlatform)
+}
+
+func (s *adminServiceImpl) ResetAccountQuota(ctx context.Context, id int64) error {
+	return s.accountRepo.ResetQuotaUsed(ctx, id)
 }
