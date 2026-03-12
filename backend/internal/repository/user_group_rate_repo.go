@@ -95,6 +95,35 @@ func (r *userGroupRateRepository) GetByUserIDs(ctx context.Context, userIDs []in
 	return result, nil
 }
 
+// GetByGroupID 获取指定分组下所有用户的专属倍率
+func (r *userGroupRateRepository) GetByGroupID(ctx context.Context, groupID int64) ([]service.UserGroupRateEntry, error) {
+	query := `
+		SELECT ugr.user_id, u.email, ugr.rate_multiplier
+		FROM user_group_rate_multipliers ugr
+		JOIN users u ON u.id = ugr.user_id
+		WHERE ugr.group_id = $1
+		ORDER BY ugr.user_id
+	`
+	rows, err := r.sql.QueryContext(ctx, query, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []service.UserGroupRateEntry
+	for rows.Next() {
+		var entry service.UserGroupRateEntry
+		if err := rows.Scan(&entry.UserID, &entry.UserEmail, &entry.RateMultiplier); err != nil {
+			return nil, err
+		}
+		result = append(result, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // GetByUserAndGroup 获取用户在特定分组的专属倍率
 func (r *userGroupRateRepository) GetByUserAndGroup(ctx context.Context, userID, groupID int64) (*float64, error) {
 	query := `SELECT rate_multiplier FROM user_group_rate_multipliers WHERE user_id = $1 AND group_id = $2`

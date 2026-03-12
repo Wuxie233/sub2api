@@ -1411,6 +1411,14 @@ export default {
       failedToUpdate: 'Failed to update group',
       failedToDelete: 'Failed to delete group',
       nameRequired: 'Please enter group name',
+      rateMultipliers: 'Rate Multipliers',
+      rateMultipliersTitle: 'Group Rate Multipliers',
+      addUserRate: 'Add User Rate Multiplier',
+      searchUserPlaceholder: 'Search user email...',
+      noRateMultipliers: 'No user rate multipliers configured',
+      rateUpdated: 'Rate multiplier updated',
+      rateDeleted: 'Rate multiplier removed',
+      rateAdded: 'Rate multiplier added',
       platforms: {
         all: 'All Platforms',
         anthropic: 'Anthropic',
@@ -1507,6 +1515,14 @@ export default {
         tooltip: 'When enabled, if the request contains MCP tools, an XML format call protocol prompt will be injected into the system prompt. Disable this to avoid interference with certain clients.',
         enabled: 'Enabled',
         disabled: 'Disabled'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max Usage Simulation',
+        tooltip:
+          'When enabled, for Claude models without upstream cache-write usage, the system deterministically maps tokens to a small input plus 1h cache creation while keeping total tokens unchanged.',
+        enabled: 'Enabled (simulate 1h cache)',
+        disabled: 'Disabled',
+        hint: 'Only token categories in usage billing logs are adjusted. No per-request mapping state is persisted.'
       },
       supportedScopes: {
         title: 'Supported Model Families',
