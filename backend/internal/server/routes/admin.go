@@ -228,6 +228,7 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id", h.Admin.Group.Update)
 		groups.DELETE("/:id", h.Admin.Group.Delete)
 		groups.GET("/:id/stats", h.Admin.Group.GetStats)
+		groups.GET("/:id/rate-multipliers", h.Admin.Group.GetGroupRateMultipliers)
 		groups.GET("/:id/api-keys", h.Admin.Group.GetGroupAPIKeys)
 	}
 }

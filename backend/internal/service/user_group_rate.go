@@ -2,6 +2,13 @@ package service
 
 import "context"
 
+// UserGroupRateEntry 分组下用户专属倍率条目
+type UserGroupRateEntry struct {
+	UserID         int64   `json:"user_id"`
+	UserEmail      string  `json:"user_email"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+}
+
 // UserGroupRateRepository 用户专属分组倍率仓储接口
 // 允许管理员为特定用户设置分组的专属计费倍率，覆盖分组默认倍率
 type UserGroupRateRepository interface {
@@ -12,6 +19,9 @@ type UserGroupRateRepository interface {
 	// GetByUserAndGroup 获取用户在特定分组的专属倍率
 	// 如果未设置专属倍率，返回 nil
 	GetByUserAndGroup(ctx context.Context, userID, groupID int64) (*float64, error)
+
+	// GetByGroupID 获取指定分组下所有用户的专属倍率
+	GetByGroupID(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 
 	// SyncUserGroupRates 同步用户的分组专属倍率
 	// rates: map[groupID]*rateMultiplier，nil 表示删除该分组的专属倍率

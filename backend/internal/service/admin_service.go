@@ -42,6 +42,7 @@ type AdminService interface {
 	UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error)
 	DeleteGroup(ctx context.Context, id int64) error
 	GetGroupAPIKeys(ctx context.Context, groupID int64, page, pageSize int) ([]APIKey, int64, error)
+	GetGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error
 
 	// API Key management (admin)
@@ -1261,6 +1262,13 @@ func (s *adminServiceImpl) GetGroupAPIKeys(ctx context.Context, groupID int64, p
 		return nil, 0, err
 	}
 	return keys, result.Total, nil
+}
+
+func (s *adminServiceImpl) GetGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error) {
+	if s.userGroupRateRepo == nil {
+		return nil, nil
+	}
+	return s.userGroupRateRepo.GetByGroupID(ctx, groupID)
 }
 
 func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
