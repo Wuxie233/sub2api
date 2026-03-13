@@ -59,7 +59,10 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetNillableFallbackGroupIDOnInvalidRequest(groupIn.FallbackGroupIDOnInvalidRequest).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
 		SetMcpXMLInject(groupIn.MCPXMLInject).
-		SetSoraStorageQuotaBytes(groupIn.SoraStorageQuotaBytes)
+		SetSoraStorageQuotaBytes(groupIn.SoraStorageQuotaBytes).
+		SetAllowMessagesDispatch(groupIn.AllowMessagesDispatch).
+		SetDefaultMappedModel(groupIn.DefaultMappedModel).
+		SetSimulateClaudeMaxEnabled(groupIn.SimulateClaudeMaxEnabled)
 
 	// 设置模型路由配置
 	if groupIn.ModelRouting != nil {
@@ -125,7 +128,10 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
 		SetMcpXMLInject(groupIn.MCPXMLInject).
-		SetSoraStorageQuotaBytes(groupIn.SoraStorageQuotaBytes)
+		SetSoraStorageQuotaBytes(groupIn.SoraStorageQuotaBytes).
+		SetAllowMessagesDispatch(groupIn.AllowMessagesDispatch).
+		SetDefaultMappedModel(groupIn.DefaultMappedModel).
+		SetSimulateClaudeMaxEnabled(groupIn.SimulateClaudeMaxEnabled)
 
 	// 显式处理可空字段：nil 需要 clear，非 nil 需要 set。
 	if groupIn.DailyLimitUSD != nil {

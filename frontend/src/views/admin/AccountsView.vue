@@ -131,7 +131,8 @@
         </div>
       </template>
       <template #table>
-        <AccountBulkActionsBar :selected-ids="selIds" @delete="handleBulkDelete" @edit="showBulkEdit = true" @clear="selIds = []" @select-page="selectPage" @toggle-schedulable="handleBulkToggleSchedulable" />
+        <AccountBulkActionsBar :selected-ids="selIds" @delete="handleBulkDelete" @reset-status="handleBulkResetStatus" @refresh-token="handleBulkRefreshToken" @edit="showBulkEdit = true" @clear="clearSelection" @select-page="selectPage" @toggle-schedulable="handleBulkToggleSchedulable" />
+        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
           :columns="cols"
           :data="accounts"
@@ -170,7 +171,7 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-platform_type="{ row }">
-            <PlatformTypeBadge :platform="row.platform" :type="row.type" />
+            <PlatformTypeBadge :platform="row.platform" :type="row.type" :plan-type="row.credentials?.plan_type" />
           </template>
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
@@ -252,6 +253,7 @@
             </div>
           </template>
         </DataTable>
+        </div>
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
@@ -260,7 +262,8 @@
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @reauth="handleReAuth" @refresh-token="handleRefresh" @reset-status="handleResetStatus" @clear-rate-limit="handleClearRateLimit" />
+    <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-status="handleResetStatus" @clear-rate-limit="handleClearRateLimit" @reset-quota="handleResetQuota" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal :show="showBulkEdit" :account-ids="selIds" :selected-platforms="selPlatforms" :selected-types="selTypes" :proxies="proxies" :groups="groups" @close="showBulkEdit = false" @updated="handleBulkUpdated" />
@@ -284,6 +287,8 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import { useTableLoader } from '@/composables/useTableLoader'
+import { useSwipeSelect } from '@/composables/useSwipeSelect'
+import { useTableSelection } from '@/composables/useTableSelection'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -298,6 +303,8 @@ import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
+import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
+import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
@@ -306,8 +313,9 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
+import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
-import type { Account, AccountPlatform, AccountType, Proxy, AdminGroup, WindowStats } from '@/types'
+import type { Account, AccountPlatform, AccountType, Proxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -315,11 +323,11 @@ const authStore = useAuthStore()
 
 const proxies = ref<Proxy[]>([])
 const groups = ref<AdminGroup[]>([])
-const selIds = ref<number[]>([])
+const accountTableRef = ref<HTMLElement | null>(null)
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
     accounts.value
-      .filter(a => selIds.value.includes(a.id))
+      .filter(a => isSelected(a.id))
       .map(a => a.platform)
   )
   return [...platforms]
@@ -327,7 +335,7 @@ const selPlatforms = computed<AccountPlatform[]>(() => {
 const selTypes = computed<AccountType[]>(() => {
   const types = new Set(
     accounts.value
-      .filter(a => selIds.value.includes(a.id))
+      .filter(a => isSelected(a.id))
       .map(a => a.type)
   )
   return [...types]
@@ -351,6 +359,9 @@ const deletingAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
+const showSchedulePanel = ref(false)
+const scheduleAcc = ref<Account | null>(null)
+const scheduleModelOptions = ref<SelectOption[]>([])
 const togglingSchedulable = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, pos:{top:number, left:number}|null}>({ show: false, acc: null, pos: null })
 const exportingData = ref(false)
@@ -359,7 +370,7 @@ const exportingData = ref(false)
 const showColumnDropdown = ref(false)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['proxy', 'notes', 'priority', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 
 // Sorting settings
@@ -549,15 +560,48 @@ const {
   initialParams: { platform: '', type: '', status: '', group: '', search: '' }
 })
 
+const {
+  selectedIds: selIds,
+  allVisibleSelected,
+  isSelected,
+  setSelectedIds,
+  select,
+  deselect,
+  toggle: toggleSel,
+  clear: clearSelection,
+  removeMany: removeSelectedAccounts,
+  toggleVisible,
+  selectVisible: selectPage
+} = useTableSelection<Account>({
+  rows: accounts,
+  getId: (account) => account.id
+})
+
+useSwipeSelect(accountTableRef, {
+  isSelected,
+  select,
+  deselect
+})
+
 const resetAutoRefreshCache = () => {
   autoRefreshETag.value = null
 }
 
+const isFirstLoad = ref(true)
+
 const load = async () => {
+  const requestParams = params as any
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
+  if (isFirstLoad.value) {
+    requestParams.lite = '1'
+  }
   await baseLoad()
+  if (isFirstLoad.value) {
+    isFirstLoad.value = false
+    delete requestParams.lite
+  }
   await refreshTodayStatsBatch()
 }
 
@@ -612,6 +656,7 @@ const isAnyModalOpen = computed(() => {
     showReAuth.value ||
     showTest.value ||
     showStats.value ||
+    showSchedulePanel.value ||
     showErrorPassthrough.value
   )
 })
@@ -635,7 +680,8 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.status !== next.status ||
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
-    current.temp_unschedulable_until !== next.temp_unschedulable_until
+    current.temp_unschedulable_until !== next.temp_unschedulable_until ||
+    buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next)
   )
 }
 
@@ -689,6 +735,7 @@ const refreshAccountsIncrementally = async () => {
         type?: string
         status?: string
         search?: string
+
       },
       { etag: autoRefreshETag.value }
     )
@@ -837,24 +884,43 @@ const openMenu = (a: Account, e: MouseEvent) => {
 
   menu.show = true
 }
-const toggleSel = (id: number) => { const i = selIds.value.indexOf(id); if(i === -1) selIds.value.push(id); else selIds.value.splice(i, 1) }
-const allVisibleSelected = computed(() => {
-  if (accounts.value.length === 0) return false
-  return accounts.value.every(account => selIds.value.includes(account.id))
-})
 const toggleSelectAllVisible = (event: Event) => {
   const target = event.target as HTMLInputElement
-  if (target.checked) {
-    const next = new Set(selIds.value)
-    accounts.value.forEach(account => next.add(account.id))
-    selIds.value = Array.from(next)
-    return
-  }
-  const visibleIds = new Set(accounts.value.map(account => account.id))
-  selIds.value = selIds.value.filter(id => !visibleIds.has(id))
+  toggleVisible(target.checked)
 }
-const selectPage = () => { selIds.value = [...new Set([...selIds.value, ...accounts.value.map(a => a.id)])] }
-const handleBulkDelete = async () => { if(!confirm(t('common.confirm'))) return; try { await Promise.all(selIds.value.map(id => adminAPI.accounts.delete(id))); selIds.value = []; reload() } catch (error) { console.error('Failed to bulk delete accounts:', error) } }
+const handleBulkDelete = async () => { if(!confirm(t('common.confirm'))) return; try { await Promise.all(selIds.value.map(id => adminAPI.accounts.delete(id))); clearSelection(); reload() } catch (error) { console.error('Failed to bulk delete accounts:', error) } }
+const handleBulkResetStatus = async () => {
+  if (!confirm(t('common.confirm'))) return
+  try {
+    const result = await adminAPI.accounts.batchClearError(selIds.value)
+    if (result.failed > 0) {
+      appStore.showError(t('admin.accounts.bulkActions.partialSuccess', { success: result.success, failed: result.failed }))
+    } else {
+      appStore.showSuccess(t('admin.accounts.bulkActions.resetStatusSuccess', { count: result.success }))
+      clearSelection()
+    }
+    reload()
+  } catch (error) {
+    console.error('Failed to bulk reset status:', error)
+    appStore.showError(String(error))
+  }
+}
+const handleBulkRefreshToken = async () => {
+  if (!confirm(t('common.confirm'))) return
+  try {
+    const result = await adminAPI.accounts.batchRefresh(selIds.value)
+    if (result.failed > 0) {
+      appStore.showError(t('admin.accounts.bulkActions.partialSuccess', { success: result.success, failed: result.failed }))
+    } else {
+      appStore.showSuccess(t('admin.accounts.bulkActions.refreshTokenSuccess', { count: result.success }))
+      clearSelection()
+    }
+    reload()
+  } catch (error) {
+    console.error('Failed to bulk refresh token:', error)
+    appStore.showError(String(error))
+  }
+}
 const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
   if (accountIds.length === 0) return
   const idSet = new Set(accountIds)
@@ -927,7 +993,7 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
     const { successIds, failedIds, successCount, failedCount, hasIds, hasCounts } = normalizeBulkSchedulableResult(result, accountIds)
     if (!hasIds && !hasCounts) {
       appStore.showError(t('admin.accounts.bulkSchedulableResultUnknown'))
-      selIds.value = accountIds
+      setSelectedIds(accountIds)
       load().catch((error) => {
         console.error('Failed to refresh accounts:', error)
       })
@@ -947,16 +1013,17 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
         ? t('admin.accounts.bulkSchedulablePartial', { success: successCount, failed: failedCount })
         : t('admin.accounts.bulkSchedulableResultUnknown')
       appStore.showError(message)
-      selIds.value = failedIds.length > 0 ? failedIds : accountIds
+      setSelectedIds(failedIds.length > 0 ? failedIds : accountIds)
     } else {
-      selIds.value = hasIds ? [] : accountIds
+      if (hasIds) clearSelection()
+      else setSelectedIds(accountIds)
     }
   } catch (error) {
     console.error('Failed to bulk toggle schedulable:', error)
     appStore.showError(t('common.error'))
   }
 }
-const handleBulkUpdated = () => { showBulkEdit.value = false; selIds.value = []; reload() }
+const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); reload() }
 const handleDataImported = () => { showImportData.value = false; reload() }
 const accountMatchesCurrentFilters = (account: Account) => {
   if (params.platform && account.platform !== params.platform) return false
@@ -1002,7 +1069,7 @@ const patchAccountInList = (updatedAccount: Account) => {
   if (!accountMatchesCurrentFilters(mergedAccount)) {
     accounts.value = accounts.value.filter(account => account.id !== mergedAccount.id)
     syncPaginationAfterLocalRemoval()
-    selIds.value = selIds.value.filter(id => id !== mergedAccount.id)
+    removeSelectedAccounts([mergedAccount.id])
     if (menu.acc?.id === mergedAccount.id) {
       menu.show = false
       menu.acc = null
@@ -1066,6 +1133,18 @@ const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
+const handleSchedule = async (a: Account) => {
+  scheduleAcc.value = a
+  scheduleModelOptions.value = []
+  showSchedulePanel.value = true
+  try {
+    const models = await adminAPI.accounts.getAvailableModels(a.id)
+    scheduleModelOptions.value = models.map((m: ClaudeModel) => ({ value: m.id, label: m.display_name || m.id }))
+  } catch {
+    scheduleModelOptions.value = []
+  }
+}
+const closeSchedulePanel = () => { showSchedulePanel.value = false; scheduleAcc.value = null; scheduleModelOptions.value = [] }
 const handleReAuth = (a: Account) => { reAuthAcc.value = a; showReAuth.value = true }
 const handleRefresh = async (a: Account) => {
   try {
@@ -1076,24 +1155,35 @@ const handleRefresh = async (a: Account) => {
     console.error('Failed to refresh credentials:', error)
   }
 }
-const handleResetStatus = async (a: Account) => {
+const handleRecoverState = async (a: Account) => {
   try {
-    const updated = await adminAPI.accounts.clearError(a.id)
+    const updated = await adminAPI.accounts.recoverState(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
-    appStore.showSuccess(t('common.success'))
-  } catch (error) {
-    console.error('Failed to reset status:', error)
+    appStore.showSuccess(t('admin.accounts.recoverStateSuccess'))
+  } catch (error: any) {
+    console.error('Failed to recover account state:', error)
+    appStore.showError(error?.message || t('admin.accounts.recoverStateFailed'))
   }
 }
-const handleClearRateLimit = async (a: Account) => {
+const handleResetQuota = async (a: Account) => {
   try {
-    const updated = await adminAPI.accounts.clearRateLimit(a.id)
+    const updated = await adminAPI.accounts.resetAccountQuota(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     appStore.showSuccess(t('common.success'))
   } catch (error) {
-    console.error('Failed to clear rate limit:', error)
+    console.error('Failed to reset quota:', error)
+  }
+}
+const handleResetQuota = async (a: Account) => {
+  try {
+    const updated = await adminAPI.accounts.resetAccountQuota(a.id)
+    patchAccountInList(updated)
+    enterAutoRefreshSilentWindow()
+    appStore.showSuccess(t('common.success'))
+  } catch (error) {
+    console.error('Failed to reset quota:', error)
   }
 }
 const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }
@@ -1113,17 +1203,11 @@ const handleToggleSchedulable = async (a: Account) => {
   }
 }
 const handleShowTempUnsched = (a: Account) => { tempUnschedAcc.value = a; showTempUnsched.value = true }
-const handleTempUnschedReset = async () => {
-  if(!tempUnschedAcc.value) return
-  try {
-    const updated = await adminAPI.accounts.clearError(tempUnschedAcc.value.id)
-    showTempUnsched.value = false
-    tempUnschedAcc.value = null
-    patchAccountInList(updated)
-    enterAutoRefreshSilentWindow()
-  } catch (error) {
-    console.error('Failed to reset temp unscheduled:', error)
-  }
+const handleTempUnschedReset = async (updated: Account) => {
+  showTempUnsched.value = false
+  tempUnschedAcc.value = null
+  patchAccountInList(updated)
+  enterAutoRefreshSilentWindow()
 }
 const formatExpiresAt = (value: number | null) => {
   if (!value) return '-'

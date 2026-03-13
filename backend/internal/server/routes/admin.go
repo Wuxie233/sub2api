@@ -78,6 +78,9 @@ func RegisterAdminRoutes(
 
 		// API Key 管理
 		registerAdminAPIKeyRoutes(admin, h)
+
+		// 定时测试计划
+		registerScheduledTestRoutes(admin, h)
 	}
 }
 
@@ -168,6 +171,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/system-logs/health", h.Admin.Ops.GetSystemLogIngestionHealth)
 
 		// Dashboard (vNext - raw path for MVP)
+		ops.GET("/dashboard/snapshot-v2", h.Admin.Ops.GetDashboardSnapshotV2)
 		ops.GET("/dashboard/overview", h.Admin.Ops.GetDashboardOverview)
 		ops.GET("/dashboard/throughput-trend", h.Admin.Ops.GetDashboardThroughputTrend)
 		ops.GET("/dashboard/latency-histogram", h.Admin.Ops.GetDashboardLatencyHistogram)
@@ -180,6 +184,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	dashboard := admin.Group("/dashboard")
 	{
+		dashboard.GET("/snapshot-v2", h.Admin.Dashboard.GetSnapshotV2)
 		dashboard.GET("/stats", h.Admin.Dashboard.GetStats)
 		dashboard.GET("/realtime", h.Admin.Dashboard.GetRealtimeMetrics)
 		dashboard.GET("/trend", h.Admin.Dashboard.GetUsageTrend)
@@ -223,6 +228,7 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id", h.Admin.Group.Update)
 		groups.DELETE("/:id", h.Admin.Group.Delete)
 		groups.GET("/:id/stats", h.Admin.Group.GetStats)
+		groups.GET("/:id/rate-multipliers", h.Admin.Group.GetGroupRateMultipliers)
 		groups.GET("/:id/api-keys", h.Admin.Group.GetGroupAPIKeys)
 	}
 }
@@ -239,6 +245,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.PUT("/:id", h.Admin.Account.Update)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
+		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/refresh-tier", h.Admin.Account.RefreshTier)
 		accounts.GET("/:id/stats", h.Admin.Account.GetStats)
@@ -247,6 +254,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
+		accounts.POST("/:id/reset-quota", h.Admin.Account.ResetQuota)
 		accounts.GET("/:id/temp-unschedulable", h.Admin.Account.GetTempUnschedulable)
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
@@ -257,6 +265,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)
+		accounts.POST("/batch-clear-error", h.Admin.Account.BatchClearError)
+		accounts.POST("/batch-refresh", h.Admin.Account.BatchRefresh)
 
 		// Antigravity 默认模型映射
 		accounts.GET("/antigravity/default-model-mapping", h.Admin.Account.GetAntigravityDefaultModelMapping)
@@ -386,6 +396,12 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 流超时处理配置
 		adminSettings.GET("/stream-timeout", h.Admin.Setting.GetStreamTimeoutSettings)
 		adminSettings.PUT("/stream-timeout", h.Admin.Setting.UpdateStreamTimeoutSettings)
+		// 请求整流器配置
+		adminSettings.GET("/rectifier", h.Admin.Setting.GetRectifierSettings)
+		adminSettings.PUT("/rectifier", h.Admin.Setting.UpdateRectifierSettings)
+		// Beta 策略配置
+		adminSettings.GET("/beta-policy", h.Admin.Setting.GetBetaPolicySettings)
+		adminSettings.PUT("/beta-policy", h.Admin.Setting.UpdateBetaPolicySettings)
 		// Sora S3 存储配置
 		adminSettings.GET("/sora-s3", h.Admin.Setting.GetSoraS3Settings)
 		adminSettings.PUT("/sora-s3", h.Admin.Setting.UpdateSoraS3Settings)
@@ -441,6 +457,7 @@ func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		subscriptions.POST("/assign", h.Admin.Subscription.Assign)
 		subscriptions.POST("/bulk-assign", h.Admin.Subscription.BulkAssign)
 		subscriptions.POST("/:id/extend", h.Admin.Subscription.Extend)
+		subscriptions.POST("/:id/reset-quota", h.Admin.Subscription.ResetQuota)
 		subscriptions.DELETE("/:id", h.Admin.Subscription.Revoke)
 	}
 
@@ -474,6 +491,18 @@ func registerUserAttributeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		attrs.PUT("/:id", h.Admin.UserAttribute.UpdateDefinition)
 		attrs.DELETE("/:id", h.Admin.UserAttribute.DeleteDefinition)
 	}
+}
+
+func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	plans := admin.Group("/scheduled-test-plans")
+	{
+		plans.POST("", h.Admin.ScheduledTest.Create)
+		plans.PUT("/:id", h.Admin.ScheduledTest.Update)
+		plans.DELETE("/:id", h.Admin.ScheduledTest.Delete)
+		plans.GET("/:id/results", h.Admin.ScheduledTest.ListResults)
+	}
+	// Nested under accounts
+	admin.GET("/accounts/:id/scheduled-test-plans", h.Admin.ScheduledTest.ListByAccount)
 }
 
 func registerErrorPassthroughRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

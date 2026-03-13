@@ -17,13 +17,14 @@ type CustomMenuItem struct {
 
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
-	RegistrationEnabled         bool `json:"registration_enabled"`
-	EmailVerifyEnabled          bool `json:"email_verify_enabled"`
-	PromoCodeEnabled            bool `json:"promo_code_enabled"`
-	PasswordResetEnabled        bool `json:"password_reset_enabled"`
-	InvitationCodeEnabled       bool `json:"invitation_code_enabled"`
-	TotpEnabled                 bool `json:"totp_enabled"`                   // TOTP 双因素认证
-	TotpEncryptionKeyConfigured bool `json:"totp_encryption_key_configured"` // TOTP 加密密钥是否已配置
+	RegistrationEnabled              bool     `json:"registration_enabled"`
+	EmailVerifyEnabled               bool     `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist []string `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                 bool     `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool     `json:"password_reset_enabled"`
+	InvitationCodeEnabled            bool     `json:"invitation_code_enabled"`
+	TotpEnabled                      bool     `json:"totp_enabled"`                   // TOTP 双因素认证
+	TotpEncryptionKeyConfigured      bool     `json:"totp_encryption_key_configured"` // TOTP 加密密钥是否已配置
 
 	SMTPHost               string `json:"smtp_host"`
 	SMTPPort               int    `json:"smtp_port"`
@@ -88,28 +89,29 @@ type DefaultSubscriptionSetting struct {
 }
 
 type PublicSettings struct {
-	RegistrationEnabled         bool             `json:"registration_enabled"`
-	EmailVerifyEnabled          bool             `json:"email_verify_enabled"`
-	PromoCodeEnabled            bool             `json:"promo_code_enabled"`
-	PasswordResetEnabled        bool             `json:"password_reset_enabled"`
-	InvitationCodeEnabled       bool             `json:"invitation_code_enabled"`
-	TotpEnabled                 bool             `json:"totp_enabled"` // TOTP 双因素认证
-	TurnstileEnabled            bool             `json:"turnstile_enabled"`
-	TurnstileSiteKey            string           `json:"turnstile_site_key"`
-	SiteName                    string           `json:"site_name"`
-	SiteLogo                    string           `json:"site_logo"`
-	SiteSubtitle                string           `json:"site_subtitle"`
-	APIBaseURL                  string           `json:"api_base_url"`
-	ContactInfo                 string           `json:"contact_info"`
-	DocURL                      string           `json:"doc_url"`
-	HomeContent                 string           `json:"home_content"`
-	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled bool             `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL     string           `json:"purchase_subscription_url"`
-	CustomMenuItems             []CustomMenuItem `json:"custom_menu_items"`
-	LinuxDoOAuthEnabled         bool             `json:"linuxdo_oauth_enabled"`
-	SoraClientEnabled           bool             `json:"sora_client_enabled"`
-	Version                     string           `json:"version"`
+	RegistrationEnabled              bool             `json:"registration_enabled"`
+	EmailVerifyEnabled               bool             `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist []string         `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                 bool             `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool             `json:"password_reset_enabled"`
+	InvitationCodeEnabled            bool             `json:"invitation_code_enabled"`
+	TotpEnabled                      bool             `json:"totp_enabled"` // TOTP 双因素认证
+	TurnstileEnabled                 bool             `json:"turnstile_enabled"`
+	TurnstileSiteKey                 string           `json:"turnstile_site_key"`
+	SiteName                         string           `json:"site_name"`
+	SiteLogo                         string           `json:"site_logo"`
+	SiteSubtitle                     string           `json:"site_subtitle"`
+	APIBaseURL                       string           `json:"api_base_url"`
+	ContactInfo                      string           `json:"contact_info"`
+	DocURL                           string           `json:"doc_url"`
+	HomeContent                      string           `json:"home_content"`
+	HideCcsImportButton              bool             `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled      bool             `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL          string           `json:"purchase_subscription_url"`
+	CustomMenuItems                  []CustomMenuItem `json:"custom_menu_items"`
+	LinuxDoOAuthEnabled              bool             `json:"linuxdo_oauth_enabled"`
+	SoraClientEnabled                bool             `json:"sora_client_enabled"`
+	Version                          string           `json:"version"`
 }
 
 // SoraS3Settings Sora S3 存储配置 DTO（响应用，不含敏感字段）
@@ -157,6 +159,26 @@ type StreamTimeoutSettings struct {
 	TempUnschedMinutes     int    `json:"temp_unsched_minutes"`
 	ThresholdCount         int    `json:"threshold_count"`
 	ThresholdWindowMinutes int    `json:"threshold_window_minutes"`
+}
+
+// RectifierSettings 请求整流器配置 DTO
+type RectifierSettings struct {
+	Enabled                  bool `json:"enabled"`
+	ThinkingSignatureEnabled bool `json:"thinking_signature_enabled"`
+	ThinkingBudgetEnabled    bool `json:"thinking_budget_enabled"`
+}
+
+// BetaPolicyRule Beta 策略规则 DTO
+type BetaPolicyRule struct {
+	BetaToken    string `json:"beta_token"`
+	Action       string `json:"action"`
+	Scope        string `json:"scope"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// BetaPolicySettings Beta 策略配置 DTO
+type BetaPolicySettings struct {
+	Rules []BetaPolicyRule `json:"rules"`
 }
 
 // ParseCustomMenuItems parses a JSON string into a slice of CustomMenuItem.

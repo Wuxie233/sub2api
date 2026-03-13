@@ -105,6 +105,9 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
+	if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {
+		logger.LegacyPrintf("service.concurrency", "Warning: startup cleanup stale process slots failed: %v", err)
+	}
 	if cfg != nil {
 		svc.StartSlotCleanupWorker(accountRepo, cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
@@ -274,6 +277,27 @@ func ProvideIdempotencyCleanupService(repo IdempotencyRepository, cfg *config.Co
 	return svc
 }
 
+// ProvideScheduledTestService creates ScheduledTestService.
+func ProvideScheduledTestService(
+	planRepo ScheduledTestPlanRepository,
+	resultRepo ScheduledTestResultRepository,
+) *ScheduledTestService {
+	return NewScheduledTestService(planRepo, resultRepo)
+}
+
+// ProvideScheduledTestRunnerService creates and starts ScheduledTestRunnerService.
+func ProvideScheduledTestRunnerService(
+	planRepo ScheduledTestPlanRepository,
+	scheduledSvc *ScheduledTestService,
+	accountTestSvc *AccountTestService,
+	rateLimitSvc *RateLimitService,
+	cfg *config.Config,
+) *ScheduledTestRunnerService {
+	svc := NewScheduledTestRunnerService(planRepo, scheduledSvc, accountTestSvc, rateLimitSvc, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
 func ProvideOpsScheduledReportService(
 	opsService *OpsService,
@@ -380,4 +404,6 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
 	ProvideIdempotencyCleanupService,
+	ProvideScheduledTestService,
+	ProvideScheduledTestRunnerService,
 )

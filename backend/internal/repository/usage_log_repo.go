@@ -22,7 +22,7 @@ import (
 	"github.com/lib/pq"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, media_type, reasoning_effort, cache_ttl_overridden, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, media_type, service_tier, reasoning_effort, cache_ttl_overridden, created_at"
 
 // dateFormatWhitelist 将 granularity 参数映射为 PostgreSQL TO_CHAR 格式字符串，防止外部输入直接拼入 SQL
 var dateFormatWhitelist = map[string]string{
@@ -135,6 +135,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 			image_count,
 			image_size,
 			media_type,
+			service_tier,
 			reasoning_effort,
 			cache_ttl_overridden,
 			created_at
@@ -144,7 +145,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 			$8, $9, $10, $11,
 			$12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
+			$20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -158,6 +159,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	ipAddress := nullString(log.IPAddress)
 	imageSize := nullString(log.ImageSize)
 	mediaType := nullString(log.MediaType)
+	serviceTier := nullString(log.ServiceTier)
 	reasoningEffort := nullString(log.ReasoningEffort)
 
 	var requestIDArg any
@@ -198,6 +200,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 		log.ImageCount,
 		imageSize,
 		mediaType,
+		serviceTier,
 		reasoningEffort,
 		log.CacheTTLOverridden,
 		createdAt,
@@ -1363,7 +1366,8 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(actual_cost), 0) as actual_cost
@@ -1401,6 +1405,8 @@ func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(actual_cost), 0) as actual_cost
@@ -1473,7 +1479,16 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 	}
 
 	whereClause := buildWhere(conditions)
-	logs, page, err := r.listUsageLogsWithPagination(ctx, whereClause, args, params)
+	var (
+		logs []service.UsageLog
+		page *pagination.PaginationResult
+		err  error
+	)
+	if shouldUseFastUsageLogTotal(filters) {
+		logs, page, err = r.listUsageLogsWithFastPagination(ctx, whereClause, args, params)
+	} else {
+		logs, page, err = r.listUsageLogsWithPagination(ctx, whereClause, args, params)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1484,17 +1499,45 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 	return logs, page, nil
 }
 
+func shouldUseFastUsageLogTotal(filters UsageLogFilters) bool {
+	if filters.ExactTotal {
+		return false
+	}
+	// 强选择过滤下记录集通常较小，保留精确总数。
+	return filters.UserID == 0 && filters.APIKeyID == 0 && filters.AccountID == 0
+}
+
 // UsageStats represents usage statistics
 type UsageStats = usagestats.UsageStats
 
 // BatchUserUsageStats represents usage stats for a single user
 type BatchUserUsageStats = usagestats.BatchUserUsageStats
 
+func normalizePositiveInt64IDs(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 // GetBatchUserUsageStats gets today and total actual_cost for multiple users within a time range.
 // If startTime is zero, defaults to 30 days ago.
 func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, startTime, endTime time.Time) (map[int64]*BatchUserUsageStats, error) {
 	result := make(map[int64]*BatchUserUsageStats)
-	if len(userIDs) == 0 {
+	normalizedUserIDs := normalizePositiveInt64IDs(userIDs)
+	if len(normalizedUserIDs) == 0 {
 		return result, nil
 	}
 
@@ -1506,58 +1549,36 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		endTime = time.Now()
 	}
 
-	for _, id := range userIDs {
+	for _, id := range normalizedUserIDs {
 		result[id] = &BatchUserUsageStats{UserID: id}
 	}
 
 	query := `
-		SELECT user_id, COALESCE(SUM(actual_cost), 0) as total_cost
+		SELECT
+			user_id,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2 AND created_at < $3), 0) as total_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost
 		FROM usage_logs
-		WHERE user_id = ANY($1) AND created_at >= $2 AND created_at < $3
+		WHERE user_id = ANY($1)
+		  AND created_at >= LEAST($2, $4)
 		GROUP BY user_id
 	`
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(userIDs), startTime, endTime)
+	today := timezone.Today()
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedUserIDs), startTime, endTime, today)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var userID int64
 		var total float64
-		if err := rows.Scan(&userID, &total); err != nil {
+		var todayTotal float64
+		if err := rows.Scan(&userID, &total, &todayTotal); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
 		if stats, ok := result[userID]; ok {
 			stats.TotalActualCost = total
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	today := timezone.Today()
-	todayQuery := `
-		SELECT user_id, COALESCE(SUM(actual_cost), 0) as today_cost
-		FROM usage_logs
-		WHERE user_id = ANY($1) AND created_at >= $2
-		GROUP BY user_id
-	`
-	rows, err = r.sql.QueryContext(ctx, todayQuery, pq.Array(userIDs), today)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var userID int64
-		var total float64
-		if err := rows.Scan(&userID, &total); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		if stats, ok := result[userID]; ok {
-			stats.TodayActualCost = total
+			stats.TodayActualCost = todayTotal
 		}
 	}
 	if err := rows.Close(); err != nil {
@@ -1577,7 +1598,8 @@ type BatchAPIKeyUsageStats = usagestats.BatchAPIKeyUsageStats
 // If startTime is zero, defaults to 30 days ago.
 func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyIDs []int64, startTime, endTime time.Time) (map[int64]*BatchAPIKeyUsageStats, error) {
 	result := make(map[int64]*BatchAPIKeyUsageStats)
-	if len(apiKeyIDs) == 0 {
+	normalizedAPIKeyIDs := normalizePositiveInt64IDs(apiKeyIDs)
+	if len(normalizedAPIKeyIDs) == 0 {
 		return result, nil
 	}
 
@@ -1589,58 +1611,36 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		endTime = time.Now()
 	}
 
-	for _, id := range apiKeyIDs {
+	for _, id := range normalizedAPIKeyIDs {
 		result[id] = &BatchAPIKeyUsageStats{APIKeyID: id}
 	}
 
 	query := `
-		SELECT api_key_id, COALESCE(SUM(actual_cost), 0) as total_cost
+		SELECT
+			api_key_id,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2 AND created_at < $3), 0) as total_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost
 		FROM usage_logs
-		WHERE api_key_id = ANY($1) AND created_at >= $2 AND created_at < $3
+		WHERE api_key_id = ANY($1)
+		  AND created_at >= LEAST($2, $4)
 		GROUP BY api_key_id
 	`
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(apiKeyIDs), startTime, endTime)
+	today := timezone.Today()
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedAPIKeyIDs), startTime, endTime, today)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var apiKeyID int64
 		var total float64
-		if err := rows.Scan(&apiKeyID, &total); err != nil {
+		var todayTotal float64
+		if err := rows.Scan(&apiKeyID, &total, &todayTotal); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
 		if stats, ok := result[apiKeyID]; ok {
 			stats.TotalActualCost = total
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	today := timezone.Today()
-	todayQuery := `
-		SELECT api_key_id, COALESCE(SUM(actual_cost), 0) as today_cost
-		FROM usage_logs
-		WHERE api_key_id = ANY($1) AND created_at >= $2
-		GROUP BY api_key_id
-	`
-	rows, err = r.sql.QueryContext(ctx, todayQuery, pq.Array(apiKeyIDs), today)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var apiKeyID int64
-		var total float64
-		if err := rows.Scan(&apiKeyID, &total); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		if stats, ok := result[apiKeyID]; ok {
-			stats.TodayActualCost = total
+			stats.TodayActualCost = todayTotal
 		}
 	}
 	if err := rows.Close(); err != nil {
@@ -1670,7 +1670,8 @@ func (r *usageLogRepository) GetUsageTrendWithFilters(ctx context.Context, start
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
-			COALESCE(SUM(cache_creation_tokens + cache_read_tokens), 0) as cache_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			COALESCE(SUM(actual_cost), 0) as actual_cost
@@ -1753,7 +1754,8 @@ func (r *usageLogRepository) getUsageTrendFromAggregates(ctx context.Context, st
 				total_requests as requests,
 				input_tokens,
 				output_tokens,
-				(cache_creation_tokens + cache_read_tokens) as cache_tokens,
+				cache_creation_tokens,
+				cache_read_tokens,
 				(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) as total_tokens,
 				total_cost as cost,
 				actual_cost
@@ -1768,7 +1770,8 @@ func (r *usageLogRepository) getUsageTrendFromAggregates(ctx context.Context, st
 				total_requests as requests,
 				input_tokens,
 				output_tokens,
-				(cache_creation_tokens + cache_read_tokens) as cache_tokens,
+				cache_creation_tokens,
+				cache_read_tokens,
 				(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) as total_tokens,
 				total_cost as cost,
 				actual_cost
@@ -1812,6 +1815,8 @@ func (r *usageLogRepository) GetModelStatsWithFilters(ctx context.Context, start
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
 			%s
@@ -1868,7 +1873,7 @@ func (r *usageLogRepository) GetGroupStatsWithFilters(ctx context.Context, start
 	query := `
 		SELECT
 			COALESCE(ul.group_id, 0) as group_id,
-			COALESCE(g.name, '') as group_name,
+			COALESCE(g.name, '(无分组)') as group_name,
 			COUNT(*) as requests,
 			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(ul.total_cost), 0) as cost,
@@ -2245,6 +2250,35 @@ func (r *usageLogRepository) listUsageLogsWithPagination(ctx context.Context, wh
 	return logs, paginationResultFromTotal(total, params), nil
 }
 
+func (r *usageLogRepository) listUsageLogsWithFastPagination(ctx context.Context, whereClause string, args []any, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {
+	limit := params.Limit()
+	offset := params.Offset()
+
+	limitPos := len(args) + 1
+	offsetPos := len(args) + 2
+	listArgs := append(append([]any{}, args...), limit+1, offset)
+	query := fmt.Sprintf("SELECT %s FROM usage_logs %s ORDER BY id DESC LIMIT $%d OFFSET $%d", usageLogSelectColumns, whereClause, limitPos, offsetPos)
+
+	logs, err := r.queryUsageLogs(ctx, query, listArgs...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	hasMore := false
+	if len(logs) > limit {
+		hasMore = true
+		logs = logs[:limit]
+	}
+
+	total := int64(offset) + int64(len(logs))
+	if hasMore {
+		// 只保证“还有下一页”，避免对超大表做全量 COUNT(*)。
+		total = int64(offset) + int64(limit) + 1
+	}
+
+	return logs, paginationResultFromTotal(total, params), nil
+}
+
 func (r *usageLogRepository) queryUsageLogs(ctx context.Context, query string, args ...any) (logs []service.UsageLog, err error) {
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -2474,6 +2508,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		imageCount            int
 		imageSize             sql.NullString
 		mediaType             sql.NullString
+		serviceTier           sql.NullString
 		reasoningEffort       sql.NullString
 		cacheTTLOverridden    bool
 		createdAt             time.Time
@@ -2513,6 +2548,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&imageCount,
 		&imageSize,
 		&mediaType,
+		&serviceTier,
 		&reasoningEffort,
 		&cacheTTLOverridden,
 		&createdAt,
@@ -2583,6 +2619,9 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	if mediaType.Valid {
 		log.MediaType = &mediaType.String
 	}
+	if serviceTier.Valid {
+		log.ServiceTier = &serviceTier.String
+	}
 	if reasoningEffort.Valid {
 		log.ReasoningEffort = &reasoningEffort.String
 	}
@@ -2599,7 +2638,8 @@ func scanTrendRows(rows *sql.Rows) ([]TrendDataPoint, error) {
 			&row.Requests,
 			&row.InputTokens,
 			&row.OutputTokens,
-			&row.CacheTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
 			&row.TotalTokens,
 			&row.Cost,
 			&row.ActualCost,
@@ -2623,6 +2663,8 @@ func scanModelStatsRows(rows *sql.Rows) ([]ModelStat, error) {
 			&row.Requests,
 			&row.InputTokens,
 			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
 			&row.TotalTokens,
 			&row.Cost,
 			&row.ActualCost,

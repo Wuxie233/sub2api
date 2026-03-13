@@ -1,12 +1,13 @@
 package service
 
 type SystemSettings struct {
-	RegistrationEnabled   bool
-	EmailVerifyEnabled    bool
-	PromoCodeEnabled      bool
-	PasswordResetEnabled  bool
-	InvitationCodeEnabled bool
-	TotpEnabled           bool // TOTP 双因素认证
+	RegistrationEnabled              bool
+	EmailVerifyEnabled               bool
+	RegistrationEmailSuffixWhitelist []string
+	PromoCodeEnabled                 bool
+	PasswordResetEnabled             bool
+	InvitationCodeEnabled            bool
+	TotpEnabled                      bool // TOTP 双因素认证
 
 	SMTPHost               string
 	SMTPPort               int
@@ -76,22 +77,23 @@ type DefaultSubscriptionSetting struct {
 }
 
 type PublicSettings struct {
-	RegistrationEnabled   bool
-	EmailVerifyEnabled    bool
-	PromoCodeEnabled      bool
-	PasswordResetEnabled  bool
-	InvitationCodeEnabled bool
-	TotpEnabled           bool // TOTP 双因素认证
-	TurnstileEnabled      bool
-	TurnstileSiteKey      string
-	SiteName              string
-	SiteLogo              string
-	SiteSubtitle          string
-	APIBaseURL            string
-	ContactInfo           string
-	DocURL                string
-	HomeContent           string
-	HideCcsImportButton   bool
+	RegistrationEnabled              bool
+	EmailVerifyEnabled               bool
+	RegistrationEmailSuffixWhitelist []string
+	PromoCodeEnabled                 bool
+	PasswordResetEnabled             bool
+	InvitationCodeEnabled            bool
+	TotpEnabled                      bool // TOTP 双因素认证
+	TurnstileEnabled                 bool
+	TurnstileSiteKey                 string
+	SiteName                         string
+	SiteLogo                         string
+	SiteSubtitle                     string
+	APIBaseURL                       string
+	ContactInfo                      string
+	DocURL                           string
+	HomeContent                      string
+	HideCcsImportButton              bool
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
@@ -171,5 +173,63 @@ func DefaultStreamTimeoutSettings() *StreamTimeoutSettings {
 		TempUnschedMinutes:     5,
 		ThresholdCount:         3,
 		ThresholdWindowMinutes: 10,
+	}
+}
+
+// RectifierSettings 请求整流器配置
+type RectifierSettings struct {
+	Enabled                  bool `json:"enabled"`                    // 总开关
+	ThinkingSignatureEnabled bool `json:"thinking_signature_enabled"` // Thinking 签名整流
+	ThinkingBudgetEnabled    bool `json:"thinking_budget_enabled"`    // Thinking Budget 整流
+}
+
+// DefaultRectifierSettings 返回默认的整流器配置（全部启用）
+func DefaultRectifierSettings() *RectifierSettings {
+	return &RectifierSettings{
+		Enabled:                  true,
+		ThinkingSignatureEnabled: true,
+		ThinkingBudgetEnabled:    true,
+	}
+}
+
+// Beta Policy 策略常量
+const (
+	BetaPolicyActionPass   = "pass"   // 透传，不做任何处理
+	BetaPolicyActionFilter = "filter" // 过滤，从 beta header 中移除该 token
+	BetaPolicyActionBlock  = "block"  // 拦截，直接返回错误
+
+	BetaPolicyScopeAll    = "all"    // 所有账号类型
+	BetaPolicyScopeOAuth  = "oauth"  // 仅 OAuth 账号
+	BetaPolicyScopeAPIKey = "apikey" // 仅 API Key 账号
+)
+
+// BetaPolicyRule 单条 Beta 策略规则
+type BetaPolicyRule struct {
+	BetaToken    string `json:"beta_token"`              // beta token 值
+	Action       string `json:"action"`                  // "pass" | "filter" | "block"
+	Scope        string `json:"scope"`                   // "all" | "oauth" | "apikey"
+	ErrorMessage string `json:"error_message,omitempty"` // 自定义错误消息 (action=block 时生效)
+}
+
+// BetaPolicySettings Beta 策略配置
+type BetaPolicySettings struct {
+	Rules []BetaPolicyRule `json:"rules"`
+}
+
+// DefaultBetaPolicySettings 返回默认的 Beta 策略配置
+func DefaultBetaPolicySettings() *BetaPolicySettings {
+	return &BetaPolicySettings{
+		Rules: []BetaPolicyRule{
+			{
+				BetaToken: "fast-mode-2026-02-01",
+				Action:    BetaPolicyActionFilter,
+				Scope:     BetaPolicyScopeAll,
+			},
+			{
+				BetaToken: "context-1m-2025-08-07",
+				Action:    BetaPolicyActionFilter,
+				Scope:     BetaPolicyScopeAll,
+			},
+		},
 	}
 }

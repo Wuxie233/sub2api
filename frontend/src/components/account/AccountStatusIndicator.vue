@@ -3,7 +3,7 @@
     <!-- Rate Limit Display (429) - Two-line layout -->
     <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
-      <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ rateLimitCountdown }}</span>
+      <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ rateLimitResumeText }}</span>
     </div>
 
     <!-- Overload Display (529) - Two-line layout -->
@@ -67,9 +67,9 @@
       </span>
       <!-- Tooltip -->
       <div
-        class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+        class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 whitespace-normal rounded bg-gray-900 px-3 py-2 text-center text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
       >
-        {{ t('admin.accounts.status.rateLimitedUntil', { time: formatTime(account.rate_limit_reset_at) }) }}
+        {{ t('admin.accounts.status.rateLimitedUntil', { time: formatDateTime(account.rate_limit_reset_at) }) }}
         <div
           class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"
         ></div>
@@ -81,15 +81,15 @@
       v-if="activeModelRateLimits.length > 0"
       :class="[
         activeModelRateLimits.length <= 4
-          ? 'flex flex-col gap-1'
+          ? 'flex flex-col gap-0.5'
           : activeModelRateLimits.length <= 8
             ? 'columns-2 gap-x-2'
             : 'columns-3 gap-x-2'
       ]"
     >
-      <div v-for="item in activeModelRateLimits" :key="item.model" class="group relative mb-1 break-inside-avoid">
+      <div v-for="item in activeModelRateLimits" :key="item.model" class="group relative mb-0.5 break-inside-avoid">
         <span
-          class="inline-flex items-center gap-1 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+          class="inline-flex items-center gap-0.5 rounded bg-purple-100 px-1.5 py-px text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
         >
           <Icon name="exclamationTriangle" size="xs" :stroke-width="2" />
           {{ formatScopeName(item.model) }}
@@ -97,7 +97,7 @@
         </span>
         <!-- Tooltip -->
         <div
-          class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+          class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 whitespace-normal rounded bg-gray-900 px-3 py-2 text-center text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
         >
           {{ t('admin.accounts.status.modelRateLimitedUntil', { model: formatScopeName(item.model), time: formatTime(item.reset_at) }) }}
           <div
@@ -117,7 +117,7 @@
       </span>
       <!-- Tooltip -->
       <div
-        class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+        class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 whitespace-normal rounded bg-gray-900 px-3 py-2 text-center text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
       >
         {{ t('admin.accounts.status.overloadedUntil', { time: formatTime(account.overload_until) }) }}
         <div
@@ -132,7 +132,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Account } from '@/types'
-import { formatCountdownWithSuffix, formatTime } from '@/utils/format'
+import { formatCountdown, formatDateTime, formatCountdownWithSuffix, formatTime } from '@/utils/format'
 
 const { t } = useI18n()
 
@@ -176,6 +176,7 @@ const formatScopeName = (scope: string): string => {
     'gemini-2.5-flash-lite': 'G25FL',
     'gemini-2.5-flash-thinking': 'G25FT',
     'gemini-2.5-pro': 'G25P',
+    'gemini-2.5-flash-image': 'G25I',
     // Gemini 3 系列
     'gemini-3-flash': 'G3F',
     'gemini-3.1-pro-high': 'G3PH',
@@ -231,7 +232,12 @@ const hasError = computed(() => {
 
 // Computed: countdown text for rate limit (429)
 const rateLimitCountdown = computed(() => {
-  return formatCountdownWithSuffix(props.account.rate_limit_reset_at)
+  return formatCountdown(props.account.rate_limit_reset_at)
+})
+
+const rateLimitResumeText = computed(() => {
+  if (!rateLimitCountdown.value) return ''
+  return t('admin.accounts.status.rateLimitedAutoResume', { time: rateLimitCountdown.value })
 })
 
 // Computed: countdown text for overload (529)

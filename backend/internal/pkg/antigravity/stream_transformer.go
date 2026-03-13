@@ -18,6 +18,9 @@ const (
 	BlockTypeFunction
 )
 
+// UsageMapHook is a callback that can modify usage data before it's emitted in SSE events.
+type UsageMapHook func(usageMap map[string]any)
+
 // StreamingProcessor 流式响应处理器
 type StreamingProcessor struct {
 	blockType         BlockType
@@ -30,6 +33,7 @@ type StreamingProcessor struct {
 	originalModel     string
 	webSearchQueries  []string
 	groundingChunks   []GeminiGroundingChunk
+	usageMapHook      UsageMapHook
 
 	// 累计 usage
 	inputTokens     int
@@ -43,6 +47,25 @@ func NewStreamingProcessor(originalModel string) *StreamingProcessor {
 		blockType:     BlockTypeNone,
 		originalModel: originalModel,
 	}
+}
+
+// SetUsageMapHook sets an optional hook that modifies usage maps before they are emitted.
+func (p *StreamingProcessor) SetUsageMapHook(fn UsageMapHook) {
+	p.usageMapHook = fn
+}
+
+func usageToMap(u ClaudeUsage) map[string]any {
+	m := map[string]any{
+		"input_tokens":  u.InputTokens,
+		"output_tokens": u.OutputTokens,
+	}
+	if u.CacheCreationInputTokens > 0 {
+		m["cache_creation_input_tokens"] = u.CacheCreationInputTokens
+	}
+	if u.CacheReadInputTokens > 0 {
+		m["cache_read_input_tokens"] = u.CacheReadInputTokens
+	}
+	return m
 }
 
 // ProcessLine 处理 SSE 行，返回 Claude SSE 事件
@@ -119,21 +142,31 @@ func (p *StreamingProcessor) ProcessLine(line string) []byte {
 	return result.Bytes()
 }
 
-// Finish 结束处理，返回最终事件和用量
+// Finish 结束处理，返回最终事件和用量。
+// 若整个流未收到任何可解析的上游数据（messageStartSent == false），
+// 则不补发任何结束事件，防止客户端收到没有 message_start 的残缺流。
 func (p *StreamingProcessor) Finish() ([]byte, *ClaudeUsage) {
-	var result bytes.Buffer
-
-	if !p.messageStopSent {
-		_, _ = result.Write(p.emitFinish(""))
-	}
-
 	usage := &ClaudeUsage{
 		InputTokens:          p.inputTokens,
 		OutputTokens:         p.outputTokens,
 		CacheReadInputTokens: p.cacheReadTokens,
 	}
 
+	if !p.messageStartSent {
+		return nil, usage
+	}
+
+	var result bytes.Buffer
+	if !p.messageStopSent {
+		_, _ = result.Write(p.emitFinish(""))
+	}
+
 	return result.Bytes(), usage
+}
+
+// MessageStartSent 报告流中是否已发出过 message_start 事件（即是否收到过有效的上游数据）
+func (p *StreamingProcessor) MessageStartSent() bool {
+	return p.messageStartSent
 }
 
 // emitMessageStart 发送 message_start 事件
@@ -158,6 +191,13 @@ func (p *StreamingProcessor) emitMessageStart(v1Resp *V1InternalResponse) []byte
 		responseID = "msg_" + generateRandomID()
 	}
 
+	var usageValue any = usage
+	if p.usageMapHook != nil {
+		usageMap := usageToMap(usage)
+		p.usageMapHook(usageMap)
+		usageValue = usageMap
+	}
+
 	message := map[string]any{
 		"id":            responseID,
 		"type":          "message",
@@ -166,7 +206,7 @@ func (p *StreamingProcessor) emitMessageStart(v1Resp *V1InternalResponse) []byte
 		"model":         p.originalModel,
 		"stop_reason":   nil,
 		"stop_sequence": nil,
-		"usage":         usage,
+		"usage":         usageValue,
 	}
 
 	event := map[string]any{
@@ -477,13 +517,20 @@ func (p *StreamingProcessor) emitFinish(finishReason string) []byte {
 		CacheReadInputTokens: p.cacheReadTokens,
 	}
 
+	var usageValue any = usage
+	if p.usageMapHook != nil {
+		usageMap := usageToMap(usage)
+		p.usageMapHook(usageMap)
+		usageValue = usageMap
+	}
+
 	deltaEvent := map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
 			"stop_reason":   stopReason,
 			"stop_sequence": nil,
 		},
-		"usage": usage,
+		"usage": usageValue,
 	}
 
 	_, _ = result.Write(p.formatSSE("message_delta", deltaEvent))

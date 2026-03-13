@@ -187,6 +187,14 @@ func (m *mockAccountRepoForPlatform) BulkUpdate(ctx context.Context, ids []int64
 	return 0, nil
 }
 
+func (m *mockAccountRepoForPlatform) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) error {
+	return nil
+}
+
+func (m *mockAccountRepoForPlatform) ResetQuotaUsed(ctx context.Context, id int64) error {
+	return nil
+}
+
 // Verify interface implementation
 var _ AccountRepository = (*mockAccountRepoForPlatform)(nil)
 
@@ -1975,6 +1983,10 @@ func (m *mockConcurrencyCache) GetAccountsLoadBatch(ctx context.Context, account
 }
 
 func (m *mockConcurrencyCache) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
+	return nil
+}
+
+func (m *mockConcurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error {
 	return nil
 }
 

@@ -17,9 +17,10 @@ jobs:
           go-version-file: backend/go.mod
           check-latest: false
           cache: true
+          cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.25.7'
+          go version | grep -q 'go1.26.1'
       - name: Unit tests
         working-directory: backend
         run: make test-unit
@@ -36,12 +37,13 @@ jobs:
           go-version-file: backend/go.mod
           check-latest: false
           cache: true
+          cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.25.7'
+          go version | grep -q 'go1.26.1'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.7
+          version: v2.9
           args: --timeout=30m
           working-directory: backend

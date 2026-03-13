@@ -210,8 +210,10 @@ func TestAPIContracts(t *testing.T) {
 							"sora_video_price_per_request": null,
 							"sora_video_price_per_request_hd": null,
 							"claude_code_only": false,
+						"allow_messages_dispatch": false,
 						"fallback_group_id": null,
 						"fallback_group_id_on_invalid_request": null,
+						"allow_messages_dispatch": false,
 						"created_at": "2025-01-02T03:04:05Z",
 						"updated_at": "2025-01-02T03:04:05Z"
 					}
@@ -446,9 +448,10 @@ func TestAPIContracts(t *testing.T) {
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
 				deps.settingRepo.SetAll(map[string]string{
-					service.SettingKeyRegistrationEnabled: "true",
-					service.SettingKeyEmailVerifyEnabled:  "false",
-					service.SettingKeyPromoCodeEnabled:    "true",
+					service.SettingKeyRegistrationEnabled:              "true",
+					service.SettingKeyEmailVerifyEnabled:               "false",
+					service.SettingKeyRegistrationEmailSuffixWhitelist: "[]",
+					service.SettingKeyPromoCodeEnabled:                 "true",
 
 					service.SettingKeySMTPHost:     "smtp.example.com",
 					service.SettingKeySMTPPort:     "587",
@@ -487,6 +490,7 @@ func TestAPIContracts(t *testing.T) {
 				"data": {
 					"registration_enabled": true,
 					"email_verify_enabled": false,
+					"registration_email_suffix_whitelist": [],
 					"promo_code_enabled": true,
 					"password_reset_enabled": false,
 					"totp_enabled": false,
@@ -641,7 +645,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, nil, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, nil, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
@@ -1091,6 +1095,14 @@ func (s *stubAccountRepo) UpdateSessionWindow(ctx context.Context, id int64, sta
 }
 
 func (s *stubAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	return errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) error {
+	return errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) ResetQuotaUsed(ctx context.Context, id int64) error {
 	return errors.New("not implemented")
 }
 

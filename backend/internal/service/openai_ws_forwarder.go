@@ -46,9 +46,10 @@ const (
 	openAIWSPayloadSizeEstimateMaxBytes = 64 * 1024
 	openAIWSPayloadSizeEstimateMaxItems = 16
 
-	openAIWSEventFlushBatchSizeDefault = 4
-	openAIWSEventFlushIntervalDefault  = 25 * time.Millisecond
-	openAIWSPayloadLogSampleDefault    = 0.2
+	openAIWSEventFlushBatchSizeDefault    = 4
+	openAIWSEventFlushIntervalDefault     = 25 * time.Millisecond
+	openAIWSPayloadLogSampleDefault       = 0.2
+	openAIWSPassthroughIdleTimeoutDefault = time.Hour
 
 	openAIWSStoreDisabledConnModeStrict   = "strict"
 	openAIWSStoreDisabledConnModeAdaptive = "adaptive"
@@ -863,7 +864,8 @@ func isOpenAIWSClientDisconnectError(err error) bool {
 		strings.Contains(message, "unexpected eof") ||
 		strings.Contains(message, "use of closed network connection") ||
 		strings.Contains(message, "connection reset by peer") ||
-		strings.Contains(message, "broken pipe")
+		strings.Contains(message, "broken pipe") ||
+		strings.Contains(message, "an established connection was aborted")
 }
 
 func classifyOpenAIWSReadFallbackReason(err error) string {
@@ -902,6 +904,18 @@ func (s *OpenAIGatewayService) getOpenAIWSConnPool() *openAIWSConnPool {
 		}
 	})
 	return s.openaiWSPool
+}
+
+func (s *OpenAIGatewayService) getOpenAIWSPassthroughDialer() openAIWSClientDialer {
+	if s == nil {
+		return nil
+	}
+	s.openaiWSPassthroughDialerOnce.Do(func() {
+		if s.openaiWSPassthroughDialer == nil {
+			s.openaiWSPassthroughDialer = newDefaultOpenAIWSClientDialer()
+		}
+	})
+	return s.openaiWSPassthroughDialer
 }
 
 func (s *OpenAIGatewayService) SnapshotOpenAIWSPoolMetrics() OpenAIWSPoolMetricsSnapshot {
@@ -965,6 +979,13 @@ func (s *OpenAIGatewayService) openAIWSReadTimeout() time.Duration {
 		return time.Duration(s.cfg.Gateway.OpenAIWS.ReadTimeoutSeconds) * time.Second
 	}
 	return 15 * time.Minute
+}
+
+func (s *OpenAIGatewayService) openAIWSPassthroughIdleTimeout() time.Duration {
+	if timeout := s.openAIWSReadTimeout(); timeout > 0 {
+		return timeout
+	}
+	return openAIWSPassthroughIdleTimeoutDefault
 }
 
 func (s *OpenAIGatewayService) openAIWSWriteTimeout() time.Duration {
@@ -1120,11 +1141,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
 			headers.Set("chatgpt-account-id", chatgptAccountID)
 		}
-		if isCodexCLI {
-			headers.Set("originator", "codex_cli_rs")
-		} else {
-			headers.Set("originator", "opencode")
-		}
+		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 	}
 
 	betaValue := openAIWSBetaV2Value
@@ -1836,6 +1853,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			wsPath,
 			account.ProxyID != nil && account.Proxy != nil,
 		)
+		var dialErr *openAIWSDialError
+		if errors.As(err, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
+			s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
+		}
 		return nil, wrapOpenAIWSFallback(classifyOpenAIWSAcquireError(err), err)
 	}
 	defer lease.Release()
@@ -2119,6 +2140,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
 				errMsg = "Upstream websocket error"
@@ -2285,9 +2307,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		RequestID:       responseID,
 		Usage:           *usage,
 		Model:           originalModel,
+		ServiceTier:     extractOpenAIServiceTier(reqBody),
 		ReasoningEffort: extractOpenAIReasoningEffort(reqBody, originalModel),
 		Stream:          reqStream,
 		OpenAIWSMode:    true,
+		ResponseHeaders: lease.HandshakeHeaders(),
 		Duration:        time.Since(startTime),
 		FirstTokenMs:    firstTokenMs,
 	}, nil
@@ -2322,13 +2346,37 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
-	ingressMode := OpenAIWSIngressModeShared
+	ingressMode := OpenAIWSIngressModeCtxPool
 	if modeRouterV2Enabled {
 		ingressMode = account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault)
 		if ingressMode == OpenAIWSIngressModeOff {
 			return NewOpenAIWSClientCloseError(
 				coderws.StatusPolicyViolation,
 				"websocket mode is disabled for this account",
+				nil,
+			)
+		}
+		switch ingressMode {
+		case OpenAIWSIngressModePassthrough:
+			if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+				return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
+			}
+			return s.proxyResponsesWebSocketV2Passthrough(
+				ctx,
+				c,
+				clientConn,
+				account,
+				token,
+				firstClientMessage,
+				hooks,
+				wsDecision,
+			)
+		case OpenAIWSIngressModeCtxPool, OpenAIWSIngressModeShared, OpenAIWSIngressModeDedicated:
+			// continue
+		default:
+			return NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				"websocket mode only supports ctx_pool/passthrough",
 				nil,
 			)
 		}
@@ -2497,7 +2545,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 
-	isCodexCLI := openai.IsCodexCLIRequest(c.GetHeader("User-Agent")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
+	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
 	wsHeaders, _ := s.buildOpenAIWSHeaders(c, account, token, wsDecision, isCodexCLI, turnState, strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)), firstPayload.promptCacheKey)
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account: account,
@@ -2597,6 +2645,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				wsPath,
 				account.ProxyID != nil && account.Proxy != nil,
 			)
+			var dialErr *openAIWSDialError
+			if errors.As(acquireErr, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
+				s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(acquireErr.Error()))
+			}
 			if errors.Is(acquireErr, errOpenAIWSPreferredConnUnavailable) {
 				return nil, NewOpenAIWSClientCloseError(
 					coderws.StatusPolicyViolation,
@@ -2735,6 +2787,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
+				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
@@ -2871,9 +2924,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					RequestID:       responseID,
 					Usage:           usage,
 					Model:           originalModel,
+					ServiceTier:     extractOpenAIServiceTierFromBody(payload),
 					ReasoningEffort: extractOpenAIReasoningEffortFromBody(payload, originalModel),
 					Stream:          reqStream,
 					OpenAIWSMode:    true,
+					ResponseHeaders: lease.HandshakeHeaders(),
 					Duration:        time.Since(turnStart),
 					FirstTokenMs:    firstTokenMs,
 				}, nil
@@ -3561,6 +3616,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
 				errMsg = "OpenAI websocket prewarm error"
@@ -3755,7 +3811,7 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return nil, nil
 	}
-	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() {
+	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return nil, nil
 	}
@@ -3824,6 +3880,36 @@ func classifyOpenAIWSAcquireError(err error) string {
 	return "acquire_conn"
 }
 
+func isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw string) bool {
+	code := strings.ToLower(strings.TrimSpace(codeRaw))
+	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
+	msg := strings.ToLower(strings.TrimSpace(msgRaw))
+
+	if strings.Contains(errType, "rate_limit") || strings.Contains(errType, "usage_limit") {
+		return true
+	}
+	if strings.Contains(code, "rate_limit") || strings.Contains(code, "usage_limit") || strings.Contains(code, "insufficient_quota") {
+		return true
+	}
+	if strings.Contains(msg, "usage limit") && strings.Contains(msg, "reached") {
+		return true
+	}
+	if strings.Contains(msg, "rate limit") && (strings.Contains(msg, "reached") || strings.Contains(msg, "exceeded")) {
+		return true
+	}
+	return false
+}
+
+func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {
+	if s == nil || s.rateLimitService == nil || account == nil || account.Platform != PlatformOpenAI {
+		return
+	}
+	if !isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
+		return
+	}
+	s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody)
+}
+
 func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (string, bool) {
 	code := strings.ToLower(strings.TrimSpace(codeRaw))
 	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
@@ -3838,6 +3924,9 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "ws_connection_limit_reached", true
 	case "previous_response_not_found":
 		return "previous_response_not_found", true
+	}
+	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
+		return "upstream_rate_limited", false
 	}
 	if strings.Contains(msg, "upgrade required") || strings.Contains(msg, "status 426") {
 		return "upgrade_required", true
@@ -3884,9 +3973,7 @@ func openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw string) int {
 	case strings.Contains(errType, "permission"),
 		strings.Contains(code, "forbidden"):
 		return http.StatusForbidden
-	case strings.Contains(errType, "rate_limit"),
-		strings.Contains(code, "rate_limit"),
-		strings.Contains(code, "insufficient_quota"):
+	case isOpenAIWSRateLimitError(codeRaw, errTypeRaw, ""):
 		return http.StatusTooManyRequests
 	default:
 		return http.StatusBadGateway

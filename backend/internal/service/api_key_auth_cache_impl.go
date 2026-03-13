@@ -244,7 +244,10 @@ func (s *APIKeyService) snapshotFromAPIKey(apiKey *APIKey) *APIKeyAuthSnapshot {
 			ModelRouting:                    apiKey.Group.ModelRouting,
 			ModelRoutingEnabled:             apiKey.Group.ModelRoutingEnabled,
 			MCPXMLInject:                    apiKey.Group.MCPXMLInject,
+			SimulateClaudeMaxEnabled:        apiKey.Group.SimulateClaudeMaxEnabled,
 			SupportedModelScopes:            apiKey.Group.SupportedModelScopes,
+			AllowMessagesDispatch:           apiKey.Group.AllowMessagesDispatch,
+			DefaultMappedModel:              apiKey.Group.DefaultMappedModel,
 		}
 	}
 	return snapshot
@@ -301,7 +304,10 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			ModelRouting:                    snapshot.Group.ModelRouting,
 			ModelRoutingEnabled:             snapshot.Group.ModelRoutingEnabled,
 			MCPXMLInject:                    snapshot.Group.MCPXMLInject,
+			SimulateClaudeMaxEnabled:        snapshot.Group.SimulateClaudeMaxEnabled,
 			SupportedModelScopes:            snapshot.Group.SupportedModelScopes,
+			AllowMessagesDispatch:           snapshot.Group.AllowMessagesDispatch,
+			DefaultMappedModel:              snapshot.Group.DefaultMappedModel,
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)
