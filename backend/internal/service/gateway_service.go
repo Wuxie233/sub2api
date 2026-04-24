@@ -1080,10 +1080,38 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 			modified = true
 		}
 	}
-	if gjson.GetBytes(out, "tool_choice").Exists() {
-		if next, ok := deleteJSONPathBytes(out, "tool_choice"); ok {
+	// max_tokens：真实 CLI 的默认值是 128000。缺失时补齐以对齐指纹。
+	if !gjson.GetBytes(out, "max_tokens").Exists() {
+		if next, ok := setJSONValueBytes(out, "max_tokens", 128000); ok {
 			out = next
 			modified = true
+		}
+	}
+
+	// context_management：thinking.type 为 enabled/adaptive 时，真实 CLI 会自动
+	// 附带 {"edits":[{"type":"clear_thinking_20251015","keep":"all"}]}。
+	// 客户端显式传了就透传；否则按 CLI 行为补齐。
+	if !gjson.GetBytes(out, "context_management").Exists() {
+		thinkingType := gjson.GetBytes(out, "thinking.type").String()
+		if thinkingType == "enabled" || thinkingType == "adaptive" {
+			const cmDefault = `{"edits":[{"type":"clear_thinking_20251015","keep":"all"}]}`
+			if next, ok := setJSONRawBytes(out, "context_management", []byte(cmDefault)); ok {
+				out = next
+				modified = true
+			}
+		}
+	}
+
+	// tool_choice：与 Parrot 对齐，不再无条件删除。
+	// - 客户端传了 {"type":"tool","name":"X"} → 保留结构，name 由
+	//   applyToolNameRewriteToBody 同步映射为假名
+	// - 其他形态（auto/any/none）原样透传
+	// 如果 body 里完全没有 tools（空数组），tool_choice 没意义时才删除
+	if !gjson.GetBytes(out, "tools").IsArray() || len(gjson.GetBytes(out, "tools").Array()) == 0 {
+		if gjson.GetBytes(out, "tool_choice").Exists() {
+			if next, ok := deleteJSONPathBytes(out, "tool_choice"); ok {
+				out = next
+				modified = true
 		}
 	}
 
@@ -5056,7 +5084,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 
 			if !clientDisconnected {
-				if _, err := io.WriteString(w, line); err != nil {
+				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
+				if _, err := io.WriteString(w, restored); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				} else if _, err := io.WriteString(w, "\n"); err != nil {
@@ -5226,6 +5255,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
+	body = reverseToolNamesIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil
 }
@@ -6965,7 +6995,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
-						if _, werr := fmt.Fprint(w, block); werr != nil {
+						restored := reverseToolNamesIfPresent(c, []byte(block))
+						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 							break
@@ -7306,6 +7337,8 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 			contentType = upstreamType
 		}
 	}
+
+	body = reverseToolNamesIfPresent(c, body)
 
 	// 写入响应
 	c.Data(resp.StatusCode, contentType, body)
