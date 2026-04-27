@@ -1128,6 +1128,112 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
+func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	systemRaw any,
+	model string,
+) []byte {
+	if account == nil || !account.IsOAuth() || len(body) == 0 {
+		return body
+	}
+
+	body = rewriteSystemForNonClaudeCode(body, systemRaw)
+
+	normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
+
+	if s.identityService != nil && c != nil && c.Request != nil {
+		if fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header); err == nil && fp != nil {
+			mimicMPT := false
+			if s.settingService != nil {
+				_, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
+			}
+			if !mimicMPT {
+				if uid := s.buildOAuthMetadataUserIDFromBody(ctx, account, fp, body); uid != "" {
+					normalizeOpts.injectMetadata = true
+					normalizeOpts.metadataUserID = uid
+				}
+			}
+		}
+	}
+
+	body, _ = normalizeClaudeOAuthRequestBody(body, model, normalizeOpts)
+
+	// Phase D+E+F: messages cache 策略 + 工具名混淆 + tools[-1] 断点
+	// 对齐 Parrot transform_request 里剩余的字段级改写。三步顺序有语义约束：
+	//   1) strip：先清除客户端的 messages[*].cache_control（多轮稳定性）
+	//   2) breakpoints：再注入 2 个断点（最后一条 + 倒数第二个 user turn）
+	//   3) tool rewrite：最后改 tools[*].name / tool_choice.name 并在 tools[-1]
+	//      上打断点；mapping 存入 gin.Context 供响应侧 bytes.Replace 还原。
+	body = stripMessageCacheControl(body)
+	body = addMessageCacheBreakpoints(body)
+
+	if rw := buildToolNameRewriteFromBody(body); rw != nil {
+		body = applyToolNameRewriteToBody(body, rw)
+		if c != nil {
+			c.Set(toolNameRewriteKey, rw)
+		}
+	} else {
+		body = applyToolsLastCacheBreakpoint(body)
+	}
+
+	return body
+}
+
+// buildOAuthMetadataUserIDFromBody 是 buildOAuthMetadataUserID 的变体，
+// 适用于调用方手上没有 ParsedRequest 的场景（如 OpenAI 协议兼容层）。
+//
+// 与 buildOAuthMetadataUserID 的唯一区别：
+//   - session hash 从 body 本体按同样规则重算，而不是读取 ParsedRequest 缓存值。
+//   - 如果 body 里已经存在 metadata.user_id，则返回空（由 ensureClaudeOAuthMetadataUserID
+//     自行决定是否覆盖）。
+func (s *GatewayService) buildOAuthMetadataUserIDFromBody(
+	ctx context.Context,
+	account *Account,
+	fp *Fingerprint,
+	body []byte,
+) string {
+	_ = ctx
+	if account == nil {
+		return ""
+	}
+	if existing := gjson.GetBytes(body, "metadata.user_id").String(); existing != "" {
+		return ""
+	}
+
+	userID := strings.TrimSpace(account.GetClaudeUserID())
+	if userID == "" && fp != nil {
+		userID = fp.ClientID
+	}
+	if userID == "" {
+		userID = generateClientID()
+	}
+
+	sessionID := uuid.NewString()
+	if hash := hashBodyForSessionSeed(body); hash != "" {
+		sessionID = generateSessionUUID(fmt.Sprintf("%d::%s", account.ID, hash))
+	}
+
+	var uaVersion string
+	if fp != nil {
+		uaVersion = ExtractCLIVersion(fp.UserAgent)
+	}
+	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
+	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
+}
+
+// hashBodyForSessionSeed 为 sessionID 提供一个稳定但仅对本次请求特征化的种子。
+// 复用 SHA-256 + 截断，与 generateSessionUUID 的输入格式对齐。
+func hashBodyForSessionSeed(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(body)
+	return fmt.Sprintf("%x", sum[:16])
+}
+
 // GenerateSessionUUID creates a deterministic UUID4 from a seed string.
 func GenerateSessionUUID(seed string) string {
 	return generateSessionUUID(seed)
@@ -3990,18 +4096,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	if shouldMimicClaudeCode {
 		// 非 Claude Code 客户端：将 system 替换为 Claude Code 标识，原始 system 迁移至 messages
-		// 条件：1) OAuth/SetupToken 账号  2) 不是 Claude Code 客户端  3) 不是 Haiku 模型  4) system 中还没有 Claude Code 提示词
-		systemRewritten := false
-		if !strings.Contains(strings.ToLower(reqModel), "haiku") &&
-			!systemIncludesClaudeCodePrompt(parsed.System) {
-			body = rewriteSystemForNonClaudeCode(body, parsed.System)
-			systemRewritten = true
-		}
+		// 条件：OAuth/SetupToken 账号 且 不是 Claude Code 客户端
+		// 注：rewriteSystemForNonClaudeCode 内部有 hasClaudeCodePrefix 检查，幂等安全
+		body = rewriteSystemForNonClaudeCode(body, parsed.System)
 
-		// system 被重写时保留 CC prompt 的 cache_control: ephemeral（匹配真实 Claude Code 行为）；
-		// 未重写时（haiku / 已含 CC 前缀）剥离客户端 cache_control，与原有行为一致。
-		// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
+		// system 始终被重写，保留 CC prompt 的 cache_control: ephemeral（匹配真实 Claude Code 行为）
+		// stripSystemCacheControl=false：不剥离客户端 cache_control
+		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
 		if s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 			if err == nil && fp != nil {
