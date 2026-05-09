@@ -1225,11 +1225,11 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 		return body
 	}
 
-	systemRewritten := false
-	if !strings.Contains(strings.ToLower(model), "haiku") {
-		body = rewriteSystemForNonClaudeCode(body, systemRaw)
-		systemRewritten = true
-	}
+	// haiku patch: 移除 haiku 旁路，让 haiku 与 sonnet/opus 一样走完整 system rewrite + OAuth mimicry。
+	// 原逻辑假设 Anthropic 对 haiku 不做 third-party 判定，但实测 haiku 同样触发
+	// "Third-party apps now draw from your extra usage" 警告，需要完整 mimicry。
+	body = rewriteSystemForNonClaudeCode(body, systemRaw)
+	systemRewritten := true
 
 	normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
 
@@ -4392,14 +4392,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// Code..." system prompt 但缺少 billing attribution block，导致 Anthropic
 		// 检测到"有 CC prompt 但无 billing block"的不一致而判为 third-party。
 		// Parrot 的 transform_request 从不检查客户端 system 内容，直接覆盖。
-		systemRewritten := false
-		if !strings.Contains(strings.ToLower(reqModel), "haiku") {
-			body = rewriteSystemForNonClaudeCode(body, parsed.System)
-			systemRewritten = true
-		}
+		// haiku patch: 移除 haiku 旁路，让 haiku 与 sonnet/opus 一样走完整 system rewrite。
+		// 实测 haiku 同样触发 "Third-party apps now draw from your extra usage" 警告。
+		body = rewriteSystemForNonClaudeCode(body, parsed.System)
+		systemRewritten := true
 
 		// system 被重写时保留 CC prompt 的 cache_control: ephemeral（匹配真实 Claude Code 行为）；
-		// 未重写时（haiku / 已含 CC 前缀）剥离客户端 cache_control，与原有行为一致。
 		// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
 		if s.identityService != nil {
@@ -6067,14 +6065,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 			incomingBeta := getHeaderRaw(req.Header, "anthropic-beta")
 			// Claude Code OAuth credentials are scoped to Claude Code.
-			// Non-haiku models MUST include claude-code beta for Anthropic to recognize
-			// this as a legitimate Claude Code request; without it, the request is
-			// rejected as third-party ("out of extra usage").
-			// Haiku models are exempt from third-party detection and don't need it.
-			requiredBetas := []string{claude.BetaOAuth, claude.BetaInterleavedThinking}
-			if !strings.Contains(strings.ToLower(modelID), "haiku") {
-				requiredBetas = claude.FullClaudeCodeMimicryBetas()
-			}
+			// ALL models (including haiku) MUST include the full Claude Code beta set for
+			// Anthropic to recognize this as a legitimate Claude Code request; without it,
+			// the request is rejected as third-party ("out of extra usage").
+			// haiku patch: 移除 haiku 免检测假设，haiku 实测同样触发 third-party 警告。
+			requiredBetas := claude.FullClaudeCodeMimicryBetas()
 			setHeaderRaw(req.Header, "anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, effectiveDropSet))
 		} else {
 			// Claude Code 客户端：尽量透传原始 header，仅补齐 oauth beta
