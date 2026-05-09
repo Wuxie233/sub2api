@@ -1112,6 +1112,7 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 			if next, ok := deleteJSONPathBytes(out, "tool_choice"); ok {
 				out = next
 				modified = true
+			}
 		}
 	}
 
