@@ -271,15 +271,22 @@ func ProvideOpsAlertEvaluatorService(
 // ProvideOpsCleanupService creates and starts OpsCleanupService (cron scheduled).
 // channelMonitorSvc 让维护任务（聚合 + 历史/聚合软删）跟随 ops 清理 cron 一起跑，
 // 共享 leader lock + heartbeat。
+// settingRepo 让 cleanup service 自己读 ops_advanced_settings.data_retention 覆盖 cfg；
+// opsService 用来反向注入 cleanup hook，以便 UI 改清理设置时能 Reload cron。
 func ProvideOpsCleanupService(
 	opsRepo OpsRepository,
 	db *sql.DB,
 	redisClient *redis.Client,
 	cfg *config.Config,
 	channelMonitorSvc *ChannelMonitorService,
+	settingRepo SettingRepository,
+	opsService *OpsService,
 ) *OpsCleanupService {
-	svc := NewOpsCleanupService(opsRepo, db, redisClient, cfg, channelMonitorSvc)
+	svc := NewOpsCleanupService(opsRepo, db, redisClient, cfg, channelMonitorSvc, settingRepo)
 	svc.Start()
+	if opsService != nil {
+		opsService.SetCleanupReloader(svc)
+	}
 	return svc
 }
 
@@ -391,53 +398,6 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
-func ProvideAuthService(
-	entClient *dbent.Client,
-	userRepo UserRepository,
-	redeemRepo RedeemCodeRepository,
-	refreshTokenCache RefreshTokenCache,
-	cfg *config.Config,
-	settingService *SettingService,
-	emailService *EmailService,
-	turnstileService *TurnstileService,
-	emailQueueService *EmailQueueService,
-	promoService *PromoService,
-	defaultSubAssigner DefaultSubscriptionAssigner,
-	affiliateService *AffiliateService,
-) *AuthService {
-	svc := NewAuthService(
-		entClient,
-		userRepo,
-		redeemRepo,
-		refreshTokenCache,
-		cfg,
-		settingService,
-		emailService,
-		turnstileService,
-		emailQueueService,
-		promoService,
-		defaultSubAssigner,
-	)
-	svc.SetAffiliateService(affiliateService)
-	return svc
-}
-
-func ProvidePaymentService(
-	entClient *dbent.Client,
-	registry *payment.Registry,
-	loadBalancer payment.LoadBalancer,
-	redeemService *RedeemService,
-	subscriptionSvc *SubscriptionService,
-	configService *PaymentConfigService,
-	userRepo UserRepository,
-	groupRepo GroupRepository,
-	affiliateService *AffiliateService,
-) *PaymentService {
-	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo)
-	svc.SetAffiliateService(affiliateService)
-	return svc
-}
-
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -451,12 +411,28 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg)
 }
 
+// ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
+func ProvideAPIKeyService(
+	apiKeyRepo APIKeyRepository,
+	userRepo UserRepository,
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache APIKeyCache,
+	cfg *config.Config,
+	billingCacheService *BillingCacheService,
+) *APIKeyService {
+	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
+	svc.SetRateLimitCacheInvalidator(billingCacheService)
+	return svc
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
-	ProvideAuthService,
+	NewAuthService,
 	NewUserService,
-	NewAPIKeyService,
+	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	NewGroupService,
 	NewAccountService,
@@ -533,9 +509,10 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
+	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
-	ProvidePaymentService,
+	NewPaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,

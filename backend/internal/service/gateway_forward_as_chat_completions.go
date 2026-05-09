@@ -61,10 +61,15 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 4. Model mapping
 	mappedModel := originalModel
-	if account.Type == AccountTypeAPIKey {
+	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
 		mappedModel = account.GetMappedModel(originalModel)
 	}
-	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
+	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+		normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(originalModel))
+		if normalized != originalModel {
+			mappedModel = normalized
+		}
+	} else if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
 		normalized := claude.NormalizeModelID(originalModel)
 		if normalized != originalModel {
 			mappedModel = normalized
@@ -85,15 +90,16 @@ func (s *GatewayService) ForwardAsChatCompletions(
 		return nil, fmt.Errorf("marshal anthropic request: %w", err)
 	}
 
-	// 6. Apply Claude Code mimicry for OAuth accounts
-	isClaudeCode := false // CC API is never Claude Code
+	// 6. Apply Claude Code mimicry for OAuth accounts.
+	// Chat Completions 协议进来的请求永远不是 Claude Code 客户端，所以对 OAuth 账号
+	// 必须完整执行 /v1/messages 主路径上的伪装链路（system 重写 + normalize + metadata 注入），
+	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
+	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
+	isClaudeCode := false
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		if !strings.Contains(strings.ToLower(mappedModel), "haiku") &&
-			!systemIncludesClaudeCodePrompt(anthropicReq.System) {
-			anthropicBody = injectClaudeCodePrompt(anthropicBody, anthropicReq.System)
-		}
+		anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
 	}
 
 	// 7. Enforce cache_control block limit
