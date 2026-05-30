@@ -582,6 +582,61 @@ func TestStripEmptyTextBlocks(t *testing.T) {
 	})
 }
 
+func TestNormalizeHistoricalTrailingThinkingBlocks_StripsHistoricalTrailingThinking(t *testing.T) {
+	input := []byte(`{
+		"thinking":{"type":"enabled","budget_tokens":1024},
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"first"}]},
+			{"role":"assistant","content":[
+				{"type":"thinking","thinking":"lead","signature":"sig-lead"},
+				{"type":"text","text":"answer"},
+				{"type":"thinking","thinking":"tail","signature":"sig-tail"},
+				{"type":"redacted_thinking","data":"opaque"}
+			]},
+			{"role":"user","content":[{"type":"text","text":"next"}]},
+			{"role":"assistant","content":[{"type":"thinking","thinking":"latest","signature":"sig-latest"}]}
+		]
+	}`)
+
+	out := NormalizeHistoricalTrailingThinkingBlocks(input)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(out, &req))
+	require.Contains(t, req, "thinking", "top-level thinking mode must not be changed")
+
+	msgs := req["messages"].([]any)
+	historicalContent := msgs[1].(map[string]any)["content"].([]any)
+	require.Len(t, historicalContent, 2)
+	require.Equal(t, "thinking", historicalContent[0].(map[string]any)["type"])
+	require.Equal(t, "text", historicalContent[1].(map[string]any)["type"])
+	require.Equal(t, "answer", historicalContent[1].(map[string]any)["text"])
+
+	latestContent := msgs[3].(map[string]any)["content"].([]any)
+	require.Len(t, latestContent, 1)
+	require.Equal(t, "thinking", latestContent[0].(map[string]any)["type"])
+	require.Equal(t, "sig-latest", latestContent[0].(map[string]any)["signature"])
+}
+
+func TestNormalizeHistoricalTrailingThinkingBlocks_AddsPlaceholderWhenHistoricalContentBecomesEmpty(t *testing.T) {
+	input := []byte(`{
+		"messages":[
+			{"role":"assistant","content":[{"type":"redacted_thinking","data":"opaque"}]},
+			{"role":"user","content":[{"type":"text","text":"next"}]},
+			{"role":"assistant","content":[{"type":"text","text":"latest"}]}
+		]
+	}`)
+
+	out := NormalizeHistoricalTrailingThinkingBlocks(input)
+
+	var req map[string]any
+	require.NoError(t, json.Unmarshal(out, &req))
+	msgs := req["messages"].([]any)
+	content := msgs[0].(map[string]any)["content"].([]any)
+	require.Len(t, content, 1)
+	require.Equal(t, "text", content[0].(map[string]any)["type"])
+	require.Equal(t, "(historical thinking omitted)", content[0].(map[string]any)["text"])
+}
+
 func TestFilterThinkingBlocksForRetry_PreservesNonEmptyTextBlocks(t *testing.T) {
 	// Non-empty text blocks should pass through unchanged
 	input := []byte(`{

@@ -4575,6 +4575,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
 
+	// Pre-filter: 修正历史 assistant 消息以 thinking 块结尾的情况（Anthropic 拒绝
+	// "final block ... cannot be thinking"）。在首次发送前主动处理，避免依赖那一轮
+	// 签名整流重试——单账号无法 failover 时尤其重要。只动非最新 assistant 消息，保留
+	// 最新轮的签名块。
+	body = NormalizeHistoricalTrailingThinkingBlocks(body)
+
 	// 重试循环
 	var resp *http.Response
 	retryStart := time.Now()
@@ -4649,11 +4655,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 							strings.Contains(m, "function_response")
 					}
 
-					// 避免在重试预算已耗尽时再发起额外请求
-					if time.Since(retryStart) >= maxRetryElapsed {
-						resp.Body = io.NopCloser(bytes.NewReader(respBody))
-						break
-					}
+					// Signature rectification is a single bounded retry. Long Claude histories can
+					// spend the whole generic retry budget before the first 400 arrives, so this
+					// repair retry must not be skipped solely because maxRetryElapsed is exhausted.
 					logger.LegacyPrintf("service.gateway", "[warn] Account %d: thinking blocks have invalid signature, retrying with filtered blocks", account.ID)
 
 					// Conservative two-stage fallback:
@@ -6982,6 +6986,16 @@ func (s *GatewayService) isThinkingBlockSignatureError(respBody []byte) bool {
 		return true
 	}
 
+	// 检测 assistant 消息以 thinking 块结尾的错误（多轮历史里某条 assistant 消息
+	// 最后一个 content block 是 thinking/redacted_thinking，Anthropic 会拒）。
+	// 单账号场景尤其关键：无法 failover 换号，必须靠 FilterThinkingBlocksForRetry
+	// 把 thinking 块降级为 text 后重试，否则错误直接抛给客户端。
+	// 例如: "messages.133: The final block in an assistant message cannot be `thinking`."
+	if strings.Contains(msg, "final block") && strings.Contains(msg, "thinking") {
+		logger.LegacyPrintf("service.gateway", "[SignatureCheck] Detected trailing thinking block error")
+		return true
+	}
+
 	return false
 }
 
@@ -9193,6 +9207,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	// Pre-filter: strip empty text blocks to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
+	body = NormalizeHistoricalTrailingThinkingBlocks(body)
 
 	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT

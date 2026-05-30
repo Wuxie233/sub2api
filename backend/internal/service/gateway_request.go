@@ -369,7 +369,106 @@ func StripEmptyTextBlocks(body []byte) []byte {
 	return out
 }
 
-// FilterThinkingBlocks removes thinking blocks from request body
+// NormalizeHistoricalTrailingThinkingBlocks 修正"历史 assistant 消息以 thinking 块结尾"的问题。
+//
+// 背景：Anthropic 拒绝最后一个 content block 是 thinking/redacted_thinking 的 assistant
+// 消息，返回 400 "The final block in an assistant message cannot be `thinking`"。多轮长
+// 对话里，某条历史 assistant 消息若以 thinking 块收尾就会触发。单账号场景无法 failover，
+// 这个错误会直接抛给客户端。
+//
+// 安全边界（仅做最小修正，避免破坏签名链）：
+//   - 只处理"非最新" assistant 消息（最新 assistant 轮的 thinking 块带签名、不可改）；
+//   - 只剥离消息末尾连续的 thinking/redacted_thinking 块，保留前面的块原样；
+//   - 不重排、不转换、不删顶层 thinking；
+//   - 剥离后若消息为空，补一个非空 text 占位，避免上游"content 不能为空"。
+func NormalizeHistoricalTrailingThinkingBlocks(body []byte) []byte {
+	// Fast path：没有任何 thinking 块就直接返回。
+	if !bytes.Contains(body, patternTypeThinking) &&
+		!bytes.Contains(body, patternTypeThinkingSpaced) &&
+		!bytes.Contains(body, patternTypeRedactedThinking) &&
+		!bytes.Contains(body, patternTypeRedactedSpaced) {
+		return body
+	}
+
+	jsonStr := *(*string)(unsafe.Pointer(&body))
+	msgsRes := gjson.Get(jsonStr, "messages")
+	if !msgsRes.Exists() || !msgsRes.IsArray() {
+		return body
+	}
+
+	var messages []any
+	if err := json.Unmarshal(sliceRawFromBody(body, msgsRes), &messages); err != nil {
+		return body
+	}
+
+	// 找到最新（最后一条）assistant 消息的下标，它的 thinking 块带签名，不能动。
+	latestAssistantIdx := -1
+	for i := 0; i < len(messages); i++ {
+		if msgMap, ok := messages[i].(map[string]any); ok {
+			if role, _ := msgMap["role"].(string); role == "assistant" {
+				latestAssistantIdx = i
+			}
+		}
+	}
+
+	isTrailingThinking := func(block any) bool {
+		blockMap, ok := block.(map[string]any)
+		if !ok {
+			return false
+		}
+		t, _ := blockMap["type"].(string)
+		return t == "thinking" || t == "redacted_thinking"
+	}
+
+	modified := false
+	for i := 0; i < len(messages); i++ {
+		if i == latestAssistantIdx {
+			continue // 保留最新 assistant 轮
+		}
+		msgMap, ok := messages[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if role, _ := msgMap["role"].(string); role != "assistant" {
+			continue
+		}
+		content, ok := msgMap["content"].([]any)
+		if !ok || len(content) == 0 {
+			continue
+		}
+		if !isTrailingThinking(content[len(content)-1]) {
+			continue // 末块不是 thinking，无需处理
+		}
+
+		// 剥离末尾连续的 thinking/redacted_thinking 块。
+		cut := len(content)
+		for cut > 0 && isTrailingThinking(content[cut-1]) {
+			cut--
+		}
+		newContent := content[:cut]
+		if len(newContent) == 0 {
+			newContent = []any{map[string]any{"type": "text", "text": "(historical thinking omitted)"}}
+		}
+		msgMap["content"] = newContent
+		modified = true
+	}
+
+	if !modified {
+		return body
+	}
+
+	msgsBytes, err := json.Marshal(messages)
+	if err != nil {
+		return body
+	}
+	out, err := sjson.SetRawBytes(body, "messages", msgsBytes)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// FilterThinkingBlocks removes thinking blocks from request body.
 // Returns filtered body or original body if filtering fails (fail-safe)
 // This prevents 400 errors from invalid thinking block signatures
 //
