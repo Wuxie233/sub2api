@@ -100,6 +100,23 @@ type errReadCloser struct {
 func (r errReadCloser) Read([]byte) (int, error) { return 0, r.err }
 func (r errReadCloser) Close() error             { return nil }
 
+type chunksThenErrReadCloser struct {
+	chunks []string
+	err    error
+	idx    int
+}
+
+func (r *chunksThenErrReadCloser) Read(p []byte) (int, error) {
+	if r.idx >= len(r.chunks) {
+		return 0, r.err
+	}
+	n := copy(p, r.chunks[r.idx])
+	r.idx++
+	return n, nil
+}
+
+func (r *chunksThenErrReadCloser) Close() error { return nil }
+
 type failingGinWriter struct {
 	gin.ResponseWriter
 	failAfter int
@@ -1268,6 +1285,49 @@ func TestOpenAIStreamingPolicyResponseFailedBeforeOutputPassesThrough(t *testing
 	require.True(t, c.Writer.Written())
 	require.Contains(t, rec.Body.String(), "response.failed")
 	require.Contains(t, rec.Body.String(), "high-risk cyber activity")
+}
+
+func TestOpenAIStreamingReadErrorAfterPartialReasoningSummarySuppressesBrokenData(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg, toolCorrector: NewCodexToolCorrector()}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: &chunksThenErrReadCloser{
+			chunks: []string{
+				strings.Join([]string{
+					"event: response.output_text.delta",
+					`data: {"type":"response.output_text.delta","delta":"hello","item_id":"msg_1"}`,
+					"",
+					"event: response.reasoning_summary_text.delta",
+				}, "\n") + "\n",
+				`data: {"type":"response.reasoning_summary_text.delta","delta":" while","item_id":"rs_09933a2b`,
+			},
+			err: io.ErrUnexpectedEOF,
+		},
+		Header: http.Header{},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream read error")
+	body := rec.Body.String()
+	require.Contains(t, body, `"type":"response.output_text.delta"`)
+	require.Contains(t, body, `"type":"error"`)
+	require.Contains(t, body, "stream_read_error")
+	require.NotContains(t, body, `response.reasoning_summary_text.delta`)
+	require.NotContains(t, body, `rs_09933a2b`)
 }
 
 func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
