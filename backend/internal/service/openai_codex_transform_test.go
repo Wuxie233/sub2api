@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -584,6 +585,44 @@ func TestDropInvalidPlaceholderTools_NoopWhenAllValid(t *testing.T) {
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
 	require.Len(t, tools, 2)
+}
+
+func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsBadTypesAndReserializes(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"function","name":"shell"},{"name":"missing"},{"type":"None"},{"type":"null"},{"type":"web_search"}]}`)
+
+	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(out, &parsed))
+	tools, ok := parsed["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", first["type"])
+	second, ok := tools[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "web_search", second["type"])
+}
+
+func TestDropInvalidPlaceholderToolsInOpenAIBody_NoopWhenNoTools(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","input":[]}`)
+
+	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, string(body), string(out))
+}
+
+func TestDropInvalidPlaceholderToolsInOpenAIBody_NoopWhenAllValid(t *testing.T) {
+	body := []byte(`{"tools":[{"type":"function","name":"shell"},{"type":"web_search"}]}`)
+
+	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, string(body), string(out))
 }
 
 func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *testing.T) {

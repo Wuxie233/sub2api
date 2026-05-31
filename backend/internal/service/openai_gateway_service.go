@@ -3206,6 +3206,15 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		body = sanitizedBody
 	}
 
+	toolsCleanedBody, toolsCleaned, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	if err != nil {
+		return nil, err
+	}
+	if toolsCleaned {
+		body = toolsCleanedBody
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Dropped invalid placeholder tools on passthrough path (account_type=%s, model=%s)", account.Type, reqModel)
+	}
+
 	// Apply OpenAI fast policy to the passthrough body (filter/block by service_tier).
 	// 统一使用 upstream 视角的 model：透传路径下 body 已经过 compact 映射 +
 	// OAuth normalize，body 中的 model 字段即上游真正会看到的 slug。
@@ -6751,6 +6760,25 @@ func buildOpenAIFastPolicyBlockedWSEvent(err *OpenAIFastBlockedError) []byte {
 		return []byte(`{"event_id":"` + eventID + `","type":"error","error":{"type":"invalid_request_error","code":"policy_violation","message":"openai fast policy blocked this request"}}`)
 	}
 	return payload
+}
+
+func dropInvalidPlaceholderToolsInOpenAIBody(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(`"tools"`)) {
+		return body, false, nil
+	}
+
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return body, false, fmt.Errorf("sanitize request body: %w", err)
+	}
+	if !dropInvalidPlaceholderTools(reqBody) {
+		return body, false, nil
+	}
+	normalized, err := json.Marshal(reqBody)
+	if err != nil {
+		return body, false, fmt.Errorf("serialize sanitized request body: %w", err)
+	}
+	return normalized, true, nil
 }
 
 func sanitizeEmptyBase64InputImagesInOpenAIBody(body []byte) ([]byte, bool, error) {
