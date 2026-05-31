@@ -22,10 +22,13 @@ import (
 )
 
 type anthropicHTTPUpstreamRecorder struct {
-	lastReq  *http.Request
-	lastBody []byte
-	resp     *http.Response
-	err      error
+	lastReq   *http.Request
+	lastBody  []byte
+	requests  []*http.Request
+	bodies    [][]byte
+	resp      *http.Response
+	responses []*http.Response
+	err       error
 }
 
 func newAnthropicAPIKeyAccountForTest() *Account {
@@ -52,11 +55,18 @@ func (u *anthropicHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, a
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
 		u.lastBody = b
+		u.bodies = append(u.bodies, append([]byte(nil), b...))
 		_ = req.Body.Close()
 		req.Body = io.NopCloser(bytes.NewReader(b))
 	}
+	u.requests = append(u.requests, req)
 	if u.err != nil {
 		return nil, u.err
+	}
+	if len(u.responses) > 0 {
+		resp := u.responses[0]
+		u.responses = u.responses[1:]
+		return resp, nil
 	}
 	return u.resp, nil
 }
@@ -259,6 +269,144 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, upstreamRespBody, rec.Body.String())
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
+}
+
+func TestGatewayService_Forward_PreservesHistoricalTrailingThinkingOnInitialSend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"first"}]},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"tail","signature":"sig-tail"}]},{"role":"user","content":[{"type":"text","text":"next"}]},{"role":"assistant","content":[{"type":"text","text":"latest"}]}]}`)
+	parsed := &ParsedRequest{Body: body, Model: "claude-3-5-sonnet-20241022"}
+
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":2,"output_tokens":1}}`)),
+	}}
+	svc := &GatewayService{
+		cfg:                 &config.Config{},
+		httpUpstream:        upstream,
+		rateLimitService:    &RateLimitService{},
+		tlsFPProfileService: &TLSFingerprintProfileService{},
+	}
+	account := &Account{
+		ID:          401,
+		Name:        "anthropic-apikey-normal",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "upstream-anthropic-key"},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "thinking", gjson.GetBytes(upstream.bodies[0], "messages.1.content.1.type").String())
+	require.Equal(t, "sig-tail", gjson.GetBytes(upstream.bodies[0], "messages.1.content.1.signature").String())
+}
+
+func TestGatewayService_ForwardCountTokens_PreservesHistoricalTrailingThinkingOnInitialSend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+
+	body := []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":[{"type":"text","text":"first"}]},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"tail","signature":"sig-tail"}]},{"role":"user","content":[{"type":"text","text":"next"}]},{"role":"assistant","content":[{"type":"text","text":"latest"}]}]}`)
+	parsed := &ParsedRequest{Body: body, Model: "claude-3-5-sonnet-20241022"}
+
+	upstreamRespBody := `{"input_tokens":42}`
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamRespBody)),
+	}}
+	svc := &GatewayService{
+		cfg:                 &config.Config{},
+		httpUpstream:        upstream,
+		rateLimitService:    &RateLimitService{},
+		tlsFPProfileService: &TLSFingerprintProfileService{},
+	}
+	account := &Account{
+		ID:          402,
+		Name:        "anthropic-apikey-count",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "upstream-anthropic-key"},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	err := svc.ForwardCountTokens(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "thinking", gjson.GetBytes(upstream.bodies[0], "messages.1.content.1.type").String())
+	require.Equal(t, "sig-tail", gjson.GetBytes(upstream.bodies[0], "messages.1.content.1.signature").String())
+	require.JSONEq(t, upstreamRespBody, rec.Body.String())
+}
+
+func TestGatewayService_Forward_FinalBlockThinking400RetriesWithHistoricalCleanup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-3-5-sonnet-20241022","thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":[{"type":"text","text":"first"}]},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"tail","signature":"sig-tail"}]},{"role":"user","content":[{"type":"text","text":"next"}]},{"role":"assistant","content":[{"type":"text","text":"latest"}]}]}`)
+	parsed := &ParsedRequest{Body: body, Model: "claude-3-5-sonnet-20241022"}
+
+	settings := DefaultRectifierSettings()
+	settings.APIKeySignatureEnabled = true
+	settingsJSON, err := json.Marshal(settings)
+	require.NoError(t, err)
+	settingSvc := NewSettingService(&gatewayTTLSettingRepo{data: map[string]string{SettingKeyRectifierSettings: string(settingsJSON)}}, &config.Config{})
+
+	upstream := &anthropicHTTPUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-final-thinking"}},
+			Body:       io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"invalid_request_error","message":"messages.1: The final block in an assistant message cannot be ` + "`thinking`" + `."}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":2,"output_tokens":1}}`)),
+		},
+	}}
+	svc := &GatewayService{
+		cfg:                 &config.Config{},
+		httpUpstream:        upstream,
+		rateLimitService:    &RateLimitService{},
+		settingService:      settingSvc,
+		tlsFPProfileService: &TLSFingerprintProfileService{},
+	}
+	account := &Account{
+		ID:          403,
+		Name:        "anthropic-apikey-reactive",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "upstream-anthropic-key"},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, "thinking", gjson.GetBytes(upstream.bodies[0], "messages.1.content.1.type").String())
+	require.Len(t, gjson.GetBytes(upstream.bodies[1], "messages.1.content").Array(), 1)
+	require.Equal(t, "text", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.type").String())
+	require.Equal(t, "answer", gjson.GetBytes(upstream.bodies[1], "messages.1.content.0.text").String())
+	require.Equal(t, "enabled", gjson.GetBytes(upstream.bodies[1], "thinking.type").String())
 }
 
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况

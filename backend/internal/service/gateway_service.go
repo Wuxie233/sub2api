@@ -4575,12 +4575,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
 
-	// Pre-filter: 修正历史 assistant 消息以 thinking 块结尾的情况（Anthropic 拒绝
-	// "final block ... cannot be thinking"）。在首次发送前主动处理，避免依赖那一轮
-	// 签名整流重试——单账号无法 failover 时尤其重要。只动非最新 assistant 消息，保留
-	// 最新轮的签名块。
-	body = NormalizeHistoricalTrailingThinkingBlocks(body)
-
 	// 重试循环
 	var resp *http.Response
 	retryStart := time.Now()
@@ -4660,12 +4654,16 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					// repair retry must not be skipped solely because maxRetryElapsed is exhausted.
 					logger.LegacyPrintf("service.gateway", "[warn] Account %d: thinking blocks have invalid signature, retrying with filtered blocks", account.ID)
 
-					// Conservative two-stage fallback:
-					// 1) Disable thinking + thinking->text (preserve content)
-					// 2) Only if upstream still errors AND error message points to tool/function signature issues:
+					// Conservative fallback:
+					// 1) For historical trailing thinking errors, only remove the offending tail blocks.
+					// 2) For signature-chain errors, disable thinking + thinking->text (preserve content).
+					// 3) Only if upstream still errors AND error message points to tool/function signature issues:
 					//    also downgrade tool_use/tool_result blocks to text.
 
 					filteredBody := FilterThinkingBlocksForRetry(body)
+					if isFinalBlockThinkingError(respBody) {
+						filteredBody = NormalizeHistoricalTrailingThinkingBlocks(body)
+					}
 					retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
 					retryReq, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 					releaseRetryCtx()
@@ -6999,6 +6997,11 @@ func (s *GatewayService) isThinkingBlockSignatureError(respBody []byte) bool {
 	return false
 }
 
+func isFinalBlockThinkingError(respBody []byte) bool {
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+	return strings.Contains(msg, "final block") && strings.Contains(msg, "thinking")
+}
+
 func (s *GatewayService) shouldFailoverOn400(respBody []byte) bool {
 	// 只对"可能是兼容性差异导致"的 400 允许切换，避免无意义重试。
 	// 默认保守：无法识别则不切换。
@@ -9207,7 +9210,6 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	// Pre-filter: strip empty text blocks to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
-	body = NormalizeHistoricalTrailingThinkingBlocks(body)
 
 	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
@@ -9305,6 +9307,9 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		logger.LegacyPrintf("service.gateway", "Account %d: detected thinking block signature error on count_tokens, retrying with filtered thinking blocks", account.ID)
 
 		filteredBody := FilterThinkingBlocksForRetry(body)
+		if isFinalBlockThinkingError(respBody) {
+			filteredBody = NormalizeHistoricalTrailingThinkingBlocks(body)
+		}
 		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicClaudeCode)
 		if buildErr == nil {
 			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
