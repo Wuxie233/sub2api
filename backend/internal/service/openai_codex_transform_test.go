@@ -519,6 +519,73 @@ func TestApplyCodexOAuthTransform_NormalizeCodexTools_PreservesResponsesFunction
 	require.Equal(t, "bash", first["name"])
 }
 
+func TestApplyCodexOAuthTransform_NormalizeCodexTools_DropsPlaceholderTypeTools(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.1",
+		"tools": []any{
+			map[string]any{"type": "", "name": "empty"},
+			map[string]any{"type": "None", "name": "none"},
+			map[string]any{"type": "null", "name": "null"},
+			map[string]any{
+				"type":       "function",
+				"name":       "bash",
+				"parameters": map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", first["type"])
+	require.Equal(t, "bash", first["name"])
+}
+
+func TestDropInvalidPlaceholderTools_RemovesPlaceholderTypesAcrossAccountTypes(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell", "parameters": map[string]any{"type": "object"}},
+			map[string]any{"name": "missing_type", "parameters": map[string]any{"type": "object"}},
+			map[string]any{"type": nil, "name": "nil_type"},
+			map[string]any{"type": "None"},
+			map[string]any{"type": "image_generation"},
+		},
+	}
+
+	require.True(t, dropInvalidPlaceholderTools(reqBody))
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", first["type"])
+	second, ok := tools[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image_generation", second["type"])
+}
+
+func TestDropInvalidPlaceholderTools_NoopWhenAllValid(t *testing.T) {
+	reqBody := map[string]any{
+		"tools": []any{
+			map[string]any{"type": "function", "name": "shell"},
+			map[string]any{"type": "web_search"},
+		},
+	}
+
+	require.False(t, dropInvalidPlaceholderTools(reqBody))
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 2)
+}
+
 func TestNormalizeOpenAIResponsesImageGenerationTools_RewritesLegacyFields(t *testing.T) {
 	reqBody := map[string]any{
 		"tools": []any{
