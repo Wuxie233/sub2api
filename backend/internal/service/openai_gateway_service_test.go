@@ -1330,6 +1330,71 @@ func TestOpenAIStreamingReadErrorAfterPartialReasoningSummarySuppressesBrokenDat
 	require.NotContains(t, body, `rs_09933a2b`)
 }
 
+func TestOpenAIStreamingPreservesMultiLineSSEDataFrame(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	streamBody := strings.Join([]string{
+		"event: response.completed",
+		`data: {"type":"response.completed",`,
+		`data: "response":{"usage":{"input_tokens":7,"output_tokens":11,"input_tokens_details":{"cached_tokens":3}}}}`,
+		"",
+	}, "\n")
+
+	t.Run("regular", func(t *testing.T) {
+		svc := &OpenAIGatewayService{cfg: cfg, toolCorrector: NewCodexToolCorrector()}
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(streamBody)),
+			Header:     http.Header{},
+		}
+
+		result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.usage)
+		require.Equal(t, 7, result.usage.InputTokens)
+		require.Equal(t, 11, result.usage.OutputTokens)
+		require.Equal(t, 3, result.usage.CacheReadInputTokens)
+		body := rec.Body.String()
+		require.Contains(t, body, "event: response.completed")
+		require.Contains(t, body, `data: {"type":"response.completed",`)
+		require.Contains(t, body, `data: "response":{"usage":{"input_tokens":7,"output_tokens":11,"input_tokens_details":{"cached_tokens":3}}}}`)
+	})
+
+	t.Run("passthrough", func(t *testing.T) {
+		svc := &OpenAIGatewayService{cfg: cfg}
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(streamBody)),
+			Header:     http.Header{},
+		}
+
+		result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.usage)
+		require.Equal(t, 7, result.usage.InputTokens)
+		require.Equal(t, 11, result.usage.OutputTokens)
+		require.Equal(t, 3, result.usage.CacheReadInputTokens)
+		body := rec.Body.String()
+		require.Contains(t, body, "event: response.completed")
+		require.Contains(t, body, `data: {"type":"response.completed",`)
+		require.Contains(t, body, `data: "response":{"usage":{"input_tokens":7,"output_tokens":11,"input_tokens_details":{"cached_tokens":3}}}}`)
+	})
+}
+
 func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{

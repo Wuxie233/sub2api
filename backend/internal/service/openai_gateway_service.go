@@ -3739,6 +3739,119 @@ func openAIStreamDataPayloadIsComplete(data string) bool {
 	return trimmed == "" || trimmed == "[DONE]" || gjson.Valid(trimmed)
 }
 
+type openAISSEFrameGateResult struct {
+	rawLines          []string
+	data              string
+	passLine          string
+	emit              bool
+	pass              bool
+	droppedIncomplete bool
+}
+
+type openAISSEFrameGate struct {
+	rawLines  []string
+	dataParts []string
+	buffering bool
+}
+
+func (g *openAISSEFrameGate) addLine(line string) openAISSEFrameGateResult {
+	if _, ok := extractOpenAISSEEventLine(line); ok {
+		result := openAISSEFrameGateResult{droppedIncomplete: g.buffering}
+		g.reset()
+		g.buffering = true
+		g.rawLines = append(g.rawLines, line)
+		return result
+	}
+	if data, ok := extractOpenAISSEDataLine(line); ok {
+		if !g.buffering {
+			g.buffering = true
+		}
+		g.rawLines = append(g.rawLines, line)
+		g.dataParts = append(g.dataParts, data)
+		joinedData := strings.Join(g.dataParts, "\n")
+		if openAIStreamDataPayloadIsComplete(joinedData) {
+			return g.emit(joinedData)
+		}
+		return openAISSEFrameGateResult{}
+	}
+
+	result := openAISSEFrameGateResult{pass: true, passLine: line, droppedIncomplete: g.buffering}
+	g.reset()
+	return result
+}
+
+func (g *openAISSEFrameGate) flush() openAISSEFrameGateResult {
+	if !g.buffering {
+		return openAISSEFrameGateResult{}
+	}
+	joinedData := strings.Join(g.dataParts, "\n")
+	if len(g.dataParts) > 0 && openAIStreamDataPayloadIsComplete(joinedData) {
+		return g.emit(joinedData)
+	}
+	g.reset()
+	return openAISSEFrameGateResult{droppedIncomplete: true}
+}
+
+func (g *openAISSEFrameGate) emit(data string) openAISSEFrameGateResult {
+	rawLines := append([]string(nil), g.rawLines...)
+	g.reset()
+	return openAISSEFrameGateResult{rawLines: rawLines, data: data, emit: true}
+}
+
+func (g *openAISSEFrameGate) reset() {
+	g.rawLines = nil
+	g.dataParts = nil
+	g.buffering = false
+}
+
+func openAISSEFrameLinesWithData(rawLines []string, data string) []string {
+	lines := make([]string, 0, len(rawLines))
+	dataWritten := false
+	for _, line := range rawLines {
+		if _, ok := extractOpenAISSEDataLine(line); ok {
+			if !dataWritten {
+				lines = append(lines, "data: "+data)
+				dataWritten = true
+			}
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if !dataWritten {
+		lines = append(lines, "data: "+data)
+	}
+	return lines
+}
+
+func (s *OpenAIGatewayService) replaceModelInSSEFrameLines(rawLines []string, fromModel, toModel string) ([]string, string, bool) {
+	var lines []string
+	replaced := false
+	for i, line := range rawLines {
+		if _, ok := extractOpenAISSEDataLine(line); !ok {
+			continue
+		}
+		replacedLine := s.replaceModelInSSELine(line, fromModel, toModel)
+		if replacedLine == line {
+			continue
+		}
+		if lines == nil {
+			lines = append([]string(nil), rawLines...)
+		}
+		lines[i] = replacedLine
+		replaced = true
+	}
+	if !replaced {
+		return rawLines, "", false
+	}
+	dataParts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if data, ok := extractOpenAISSEDataLine(line); ok {
+			dataParts = append(dataParts, data)
+		}
+	}
+	return lines, strings.Join(dataParts, "\n"), true
+}
+
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
 	if isOpenAITransientProcessingError(http.StatusBadRequest, message, payload) {
 		return true
@@ -3859,7 +3972,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	pendingLines := make([]string, 0, 8)
-	pendingEventLine := ""
 	writePendingLines := func() bool {
 		for _, pending := range pendingLines {
 			if _, err := fmt.Fprintln(w, pending); err != nil {
@@ -3870,6 +3982,29 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		pendingLines = pendingLines[:0]
 		return true
+	}
+	writePassthroughLines := func(lines []string, startsClientOutput bool) {
+		if clientDisconnected {
+			return
+		}
+		if !clientOutputStarted && !startsClientOutput {
+			pendingLines = append(pendingLines, lines...)
+			return
+		}
+		if !clientOutputStarted && len(pendingLines) > 0 {
+			if !writePendingLines() {
+				return
+			}
+		}
+		for _, line := range lines {
+			if _, err := fmt.Fprintln(w, line); err != nil {
+				clientDisconnected = true
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+				return
+			}
+		}
+		clientOutputStarted = true
+		flusher.Flush()
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -3891,84 +4026,67 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		lineStartsClientOutput := false
+	frameGate := openAISSEFrameGate{}
+	logDroppedIncompleteFrame := func() {
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] suppressed incomplete SSE data line before stream error: account=%d", account.ID)
+	}
+	processSSEFrame := func(rawLines []string, data string) error {
+		frameLines := rawLines
+		dataBytes := []byte(data)
+		trimmedData := strings.TrimSpace(data)
+		if needModelReplace && strings.Contains(data, mappedModel) {
+			if replacedLines, replacedData, replaced := s.replaceModelInSSEFrameLines(rawLines, mappedModel, originalModel); replaced {
+				frameLines = replacedLines
+				dataBytes = []byte(replacedData)
+				trimmedData = strings.TrimSpace(replacedData)
+			}
+		}
+		eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 		forceFlushFailedEvent := false
-		if _, ok := extractOpenAISSEEventLine(line); ok {
-			pendingEventLine = line
-			continue
+		if eventType == "response.failed" {
+			failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+			if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+				return s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+			}
+			forceFlushFailedEvent = true
+			sawFailedEvent = true
 		}
-		if data, ok := extractOpenAISSEDataLine(line); ok {
-			if !openAIStreamDataPayloadIsComplete(data) {
-				pendingEventLine = ""
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] suppressed incomplete SSE data line before stream error: account=%d", account.ID)
-				continue
-			}
-			dataBytes := []byte(data)
-			trimmedData := strings.TrimSpace(data)
-			if needModelReplace && strings.Contains(data, mappedModel) {
-				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
-				if replacedData, replaced := extractOpenAISSEDataLine(line); replaced {
-					dataBytes = []byte(replacedData)
-					trimmedData = strings.TrimSpace(replacedData)
-				}
-			}
-			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
-			if eventType == "response.failed" {
-				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					return resultWithUsage(),
-						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
-				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
-			}
-			if trimmedData == "[DONE]" {
-				sawDone = true
-			}
-			if openAIStreamEventIsTerminal(trimmedData) {
-				sawTerminalEvent = true
-			}
-			imageCounter.AddSSEData(dataBytes)
-			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
-			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
-			s.parseSSEUsageBytes(dataBytes, usage)
+		if trimmedData == "[DONE]" {
+			sawDone = true
 		}
+		if openAIStreamEventIsTerminal(trimmedData) {
+			sawTerminalEvent = true
+		}
+		imageCounter.AddSSEData(dataBytes)
+		lineStartsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
+		if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+		}
+		s.parseSSEUsageBytes(dataBytes, usage)
+		writePassthroughLines(frameLines, lineStartsClientOutput)
+		return nil
+	}
+	processGateResult := func(result openAISSEFrameGateResult) error {
+		if result.droppedIncomplete {
+			logDroppedIncompleteFrame()
+		}
+		if result.emit {
+			return processSSEFrame(result.rawLines, result.data)
+		}
+		if result.pass {
+			writePassthroughLines([]string{result.passLine}, false)
+		}
+		return nil
+	}
 
-		if !clientDisconnected {
-			if !clientOutputStarted && !lineStartsClientOutput {
-				if pendingEventLine != "" {
-					pendingLines = append(pendingLines, pendingEventLine)
-					pendingEventLine = ""
-				}
-				pendingLines = append(pendingLines, line)
-				continue
-			}
-			if !clientOutputStarted && len(pendingLines) > 0 {
-				if !writePendingLines() {
-					continue
-				}
-			}
-			if pendingEventLine != "" {
-				if _, err := fmt.Fprintln(w, pendingEventLine); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-					continue
-				}
-				pendingEventLine = ""
-			}
-			if _, err := fmt.Fprintln(w, line); err != nil {
-				clientDisconnected = true
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-			} else {
-				clientOutputStarted = true
-				flusher.Flush()
-			}
+	for scanner.Scan() {
+		if err := processGateResult(frameGate.addLine(scanner.Text())); err != nil {
+			return resultWithUsage(), err
 		}
+	}
+	if err := processGateResult(frameGate.flush()); err != nil {
+		return resultWithUsage(), err
 	}
 	if err := scanner.Err(); err != nil {
 		if sawTerminalEvent && !sawFailedEvent {
@@ -4689,7 +4807,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
-	pendingEventLine := ""
 	sendErrorEvent := func(reason string) {
 		if errorEventSent || clientDisconnected {
 			return
@@ -4785,118 +4902,121 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		sendErrorEvent("stream_read_error")
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
 	}
-	processSSELine := func(line string, queueDrained bool) {
-		if streamFailoverErr != nil {
-			return
-		}
-		if _, ok := extractOpenAISSEEventLine(line); ok {
-			pendingEventLine = line
-			return
-		}
-		// Extract data from SSE line (supports both "data: " and "data:" formats)
-		if data, ok := extractOpenAISSEDataLine(line); ok {
-			if !openAIStreamDataPayloadIsComplete(data) {
-				pendingEventLine = ""
-				logger.LegacyPrintf("service.openai_gateway", "suppressed incomplete OpenAI SSE data line before stream error: account=%d", account.ID)
-				return
-			}
-
-			// Replace model in response if needed.
-			// Fast path: most events do not contain model field values.
-			if needModelReplace && mappedModel != "" && strings.Contains(data, mappedModel) {
-				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
-			}
-
-			dataBytes := []byte(data)
-			if openAIStreamEventIsTerminal(data) {
-				sawTerminalEvent = true
-			}
-			eventType := strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
-			forceFlushFailedEvent := false
-			if eventType == "response.failed" {
-				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					sawFailedEvent = true
-					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
-					return
-				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
-			}
-			imageCounter.AddSSEData(dataBytes)
-
-			// Correct Codex tool calls if needed (apply_patch -> edit, etc.)
-			if correctedData, corrected := s.toolCorrector.CorrectToolCallsInSSEBytes(dataBytes); corrected {
-				dataBytes = correctedData
-				data = string(correctedData)
-				line = "data: " + data
-				eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
-			}
-			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
-
-			// 写入客户端（客户端断开后继续 drain 上游）
-			if !clientDisconnected {
-				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
-				if firstTokenMs == nil && startsClientOutput {
-					// 保证首个 token 事件尽快出站，避免影响 TTFT。
-					shouldFlush = true
-				}
-				if pendingEventLine != "" {
-					if _, err := bufferedWriter.WriteString(pendingEventLine); err != nil {
-						clientDisconnected = true
-						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-					} else if _, err := bufferedWriter.WriteString("\n"); err != nil {
-						clientDisconnected = true
-						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-					}
-					pendingEventLine = ""
-				}
-				if clientDisconnected {
-					// keep draining upstream for usage
-				} else if _, err := bufferedWriter.WriteString(line); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-				} else if _, err := bufferedWriter.WriteString("\n"); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-				} else if shouldFlush {
-					if err := flushBuffered(); err != nil {
-						clientDisconnected = true
-						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
-					} else {
-						clientOutputStarted = true
-						lastDownstreamWriteAt = time.Now()
-					}
-				}
-			}
-
-			// Record first token time
-			if firstTokenMs == nil && startsClientOutput {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
-			s.parseSSEUsageBytes(dataBytes, usage)
-			return
-		}
-
-		// Forward non-data lines as-is
-		if !clientDisconnected {
+	frameGate := openAISSEFrameGate{}
+	writeBufferedLines := func(lines []string) bool {
+		for _, line := range lines {
 			if _, err := bufferedWriter.WriteString(line); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-			} else if _, err := bufferedWriter.WriteString("\n"); err != nil {
+				return false
+			}
+			if _, err := bufferedWriter.WriteString("\n"); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-			} else if queueDrained && clientOutputStarted {
-				if err := flushBuffered(); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
-				} else {
-					clientOutputStarted = true
-					lastDownstreamWriteAt = time.Now()
-				}
+				return false
 			}
 		}
+		return true
+	}
+	flushAfterSSEWrite := func(shouldFlush bool) {
+		if !shouldFlush || clientDisconnected {
+			return
+		}
+		if err := flushBuffered(); err != nil {
+			clientDisconnected = true
+			logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
+		} else {
+			clientOutputStarted = true
+			lastDownstreamWriteAt = time.Now()
+		}
+	}
+	forwardStandaloneSSELine := func(line string, queueDrained bool) {
+		if clientDisconnected {
+			return
+		}
+		if writeBufferedLines([]string{line}) {
+			flushAfterSSEWrite(queueDrained && clientOutputStarted)
+		}
+	}
+	processSSEFrame := func(rawLines []string, data string, queueDrained bool) {
+		if streamFailoverErr != nil {
+			return
+		}
+
+		frameLines := rawLines
+		if needModelReplace && mappedModel != "" && strings.Contains(data, mappedModel) {
+			if replacedLines, replacedData, replaced := s.replaceModelInSSEFrameLines(rawLines, mappedModel, originalModel); replaced {
+				frameLines = replacedLines
+				data = replacedData
+			}
+		}
+
+		dataBytes := []byte(data)
+		if openAIStreamEventIsTerminal(data) {
+			sawTerminalEvent = true
+		}
+		eventType := strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
+		forceFlushFailedEvent := false
+		if eventType == "response.failed" {
+			failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+			if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+				sawFailedEvent = true
+				streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
+				return
+			}
+			forceFlushFailedEvent = true
+			sawFailedEvent = true
+		}
+		imageCounter.AddSSEData(dataBytes)
+
+		// Correct Codex tool calls if needed (apply_patch -> edit, etc.)
+		if correctedData, corrected := s.toolCorrector.CorrectToolCallsInSSEBytes(dataBytes); corrected {
+			dataBytes = correctedData
+			data = string(correctedData)
+			frameLines = openAISSEFrameLinesWithData(frameLines, data)
+			eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
+		}
+		startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+
+		// 写入客户端（客户端断开后继续 drain 上游）
+		if !clientDisconnected {
+			shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
+			if firstTokenMs == nil && startsClientOutput {
+				// 保证首个 token 事件尽快出站，避免影响 TTFT。
+				shouldFlush = true
+			}
+			if writeBufferedLines(frameLines) {
+				flushAfterSSEWrite(shouldFlush)
+			}
+		}
+
+		// Record first token time
+		if firstTokenMs == nil && startsClientOutput {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+		}
+		s.parseSSEUsageBytes(dataBytes, usage)
+	}
+	processGateResult := func(result openAISSEFrameGateResult, queueDrained bool) {
+		if streamFailoverErr != nil {
+			return
+		}
+		if result.droppedIncomplete {
+			logger.LegacyPrintf("service.openai_gateway", "suppressed incomplete OpenAI SSE data line before stream error: account=%d", account.ID)
+		}
+		if result.emit {
+			processSSEFrame(result.rawLines, result.data, queueDrained)
+			return
+		}
+		if result.pass {
+			forwardStandaloneSSELine(result.passLine, queueDrained)
+		}
+	}
+	processSSELine := func(line string, queueDrained bool) {
+		processGateResult(frameGate.addLine(line), queueDrained)
+	}
+	flushSSEFrameGate := func(queueDrained bool) {
+		processGateResult(frameGate.flush(), queueDrained)
 	}
 
 	// 无超时/无 keepalive 的常见路径走同步扫描，减少 goroutine 与 channel 开销。
@@ -4907,6 +5027,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			if streamFailoverErr != nil {
 				return resultWithUsage(), streamFailoverErr
 			}
+		}
+		flushSSEFrameGate(true)
+		if streamFailoverErr != nil {
+			return resultWithUsage(), streamFailoverErr
 		}
 		if result, err, done := handleScanErr(scanner.Err()); done {
 			return result, err
@@ -4950,7 +5074,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				flushSSEFrameGate(true)
+				if streamFailoverErr != nil {
+					return resultWithUsage(), streamFailoverErr
+				}
 				return finalizeStream()
+			}
+			if ev.err != nil {
+				flushSSEFrameGate(len(events) == 0)
+				if streamFailoverErr != nil {
+					return resultWithUsage(), streamFailoverErr
+				}
 			}
 			if result, err, done := handleScanErr(ev.err); done {
 				return result, err

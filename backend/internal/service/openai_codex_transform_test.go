@@ -587,6 +587,33 @@ func TestDropInvalidPlaceholderTools_NoopWhenAllValid(t *testing.T) {
 	require.Len(t, tools, 2)
 }
 
+func TestDropInvalidPlaceholderTools_PreservesToolChoiceForSurvivingTool(t *testing.T) {
+	// 锁定契约：cleanup 只丢弃无效 type 的工具条目，不改写指向存活工具的 tool_choice。
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "None", "name": "placeholder"},
+			map[string]any{"type": "function", "name": "shell", "parameters": map[string]any{"type": "object"}},
+		},
+		"tool_choice": map[string]any{"type": "function", "name": "shell"},
+	}
+
+	require.True(t, dropInvalidPlaceholderTools(reqBody))
+
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+	first, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", first["type"])
+	require.Equal(t, "shell", first["name"])
+
+	choice, ok := reqBody["tool_choice"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", choice["type"])
+	require.Equal(t, "shell", choice["name"])
+}
+
 func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsBadTypesAndReserializes(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"function","name":"shell"},{"name":"missing"},{"type":"None"},{"type":"null"},{"type":"web_search"}]}`)
 
