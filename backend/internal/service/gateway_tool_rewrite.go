@@ -285,6 +285,47 @@ func applyToolsLastCacheBreakpoint(body []byte) []byte {
 	return body
 }
 
+// ensureToolInputSchemas 保证 body.tools 里每个 custom 风格的工具都带非空 input_schema。
+//
+// 背景：某些 relay/上游路径会把一个 schema-less 的 agent 工具（实测为 call_omo_agent
+// 经 sidecar 改名后的 CallOMOAgent）作为最后一个工具追加进 tools，Anthropic 会以
+// `tools.N.custom.input_schema: Field required` 拒绝整个请求（N == 工具数，越界）。
+// 这在工具数顶满（visual-engineering + 多 skill）时高频触发。
+//
+// 只补 custom 风格工具（type 为空 / "function" / "custom"）；server tool（type 为
+// web_search_20250305 / computer_20250124 等）本就无 input_schema，保持不动。
+// 返回新 body 和被补 schema 的工具名列表（供调用方记录，定位注入源）。
+func ensureToolInputSchemas(body []byte) ([]byte, []string) {
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.IsArray() {
+		return body, nil
+	}
+	var fixed []string
+	idx := -1
+	tools.ForEach(func(_, t gjson.Result) bool {
+		idx++
+		if !shouldMimicToolName(t.Get("type").String()) {
+			return true
+		}
+		sc := t.Get("input_schema")
+		if sc.IsObject() && len(sc.Map()) > 0 {
+			return true
+		}
+		next, err := sjson.SetRawBytes(body, fmt.Sprintf("tools.%d.input_schema", idx), []byte(`{"type":"object"}`))
+		if err != nil {
+			return true
+		}
+		body = next
+		name := t.Get("name").String()
+		if name == "" {
+			name = fmt.Sprintf("#%d", idx)
+		}
+		fixed = append(fixed, name)
+		return true
+	})
+	return body, fixed
+}
+
 // restoreToolNamesInBytes 对 bytes chunk 做逆向还原：假名 → 真名。
 // 按 ReverseOrdered 的假名长度倒序逐个 bytes.Replace，防止子串冲突
 // （与 Parrot _restore_tool_names_in_chunk 的 sorted(..., reverse=True) 等价）。

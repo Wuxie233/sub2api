@@ -6340,6 +6340,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		body = signBillingHeaderCCH(body)
 	}
 
+	if normalized, fixed := ensureToolInputSchemas(body); len(fixed) > 0 {
+		body = normalized
+		logger.LegacyPrintf("service.gateway", "ensureToolInputSchemas: patched %d schema-less tool(s): %v", len(fixed), fixed)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err

@@ -266,3 +266,27 @@ func TestBuildDynamicToolMap_FakeNameShape(t *testing.T) {
 		require.True(t, strings.Contains(fake, head), "fake %q should contain head3 %q of %q", fake, head, name)
 	}
 }
+
+func TestEnsureToolInputSchemas(t *testing.T) {
+	body := []byte(`{"tools":[` +
+		`{"name":"read","input_schema":{"type":"object","properties":{"p":{"type":"string"}}}},` +
+		`{"name":"empty_schema","input_schema":{}},` +
+		`{"name":"CallOMOAgent"},` +
+		`{"name":"web_search","type":"web_search_20250305"}` +
+		`]}`)
+
+	out, fixed := ensureToolInputSchemas(body)
+
+	require.ElementsMatch(t, []string{"empty_schema", "CallOMOAgent"}, fixed)
+	require.Equal(t, "string", gjson.GetBytes(out, "tools.0.input_schema.properties.p.type").String())
+	require.Equal(t, "object", gjson.GetBytes(out, "tools.1.input_schema.type").String())
+	require.Equal(t, "object", gjson.GetBytes(out, "tools.2.input_schema.type").String())
+	require.False(t, gjson.GetBytes(out, "tools.3.input_schema").Exists())
+}
+
+func TestEnsureToolInputSchemas_NoToolsNoop(t *testing.T) {
+	body := []byte(`{"messages":[]}`)
+	out, fixed := ensureToolInputSchemas(body)
+	require.Nil(t, fixed)
+	require.Equal(t, string(body), string(out))
+}
