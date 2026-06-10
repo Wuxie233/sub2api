@@ -29,6 +29,8 @@ RUN pnpm install --frozen-lockfile
 
 # Copy frontend source and build
 COPY frontend/ ./
+# fork build fix: AdminComplianceDialog.vue raw-imports repo-root docs/legal/*.md (upstream Dockerfile omits this copy)
+COPY docs/legal/ /app/docs/legal/
 RUN pnpm run build
 
 # -----------------------------------------------------------------------------

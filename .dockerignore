@@ -11,6 +11,9 @@
 *.md
 !deploy/DOCKER.md
 docs/
+# fork build fix: keep compliance docs raw-imported by the frontend build in context
+!docs/legal/
+!docs/legal/*.md
 
 # IDE
 .idea/
