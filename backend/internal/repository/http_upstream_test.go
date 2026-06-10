@@ -146,6 +146,18 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestAnthropicStreamProfileUsesHTTP1Transport() {
+	s.cfg.Gateway = config.GatewayConfig{}
+	svc := s.newService()
+	entry, err := svc.getClientEntry("", 1, 1, service.HTTPUpstreamProfileAnthropicStream, false, false)
+	require.NoError(s.T(), err)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.False(s.T(), transport.ForceAttemptHTTP2, "Anthropic streaming must not use HTTP/2")
+	require.NotNil(s.T(), transport.TLSNextProto, "Anthropic streaming H1 mode must disable H2 negotiation")
+	require.Equal(s.T(), upstreamProtocolModeAnthropicStreamH1, entry.protocolMode)
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIHeaderTimeoutChangeRebuildsClient() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true},

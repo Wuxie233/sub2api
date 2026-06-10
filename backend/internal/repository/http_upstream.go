@@ -58,10 +58,11 @@ const (
 )
 
 const (
-	upstreamProtocolModeDefault          = "default"
-	upstreamProtocolModeOpenAIH1         = "openai_h1"
-	upstreamProtocolModeOpenAIH2         = "openai_h2"
-	upstreamProtocolModeOpenAIH1Fallback = "openai_h1_fallback"
+	upstreamProtocolModeDefault            = "default"
+	upstreamProtocolModeOpenAIH1           = "openai_h1"
+	upstreamProtocolModeOpenAIH2           = "openai_h2"
+	upstreamProtocolModeOpenAIH1Fallback   = "openai_h1_fallback"
+	upstreamProtocolModeAnthropicStreamH1  = "anthropic_stream_h1"
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -751,6 +752,9 @@ func (s *httpUpstreamService) resolveOpenAIHTTP2Settings() openAIHTTP2Settings {
 }
 
 func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL) string {
+	if profile == service.HTTPUpstreamProfileAnthropicStream {
+		return upstreamProtocolModeAnthropicStreamH1
+	}
 	if profile != service.HTTPUpstreamProfileOpenAI {
 		return upstreamProtocolModeDefault
 	}
@@ -1065,6 +1069,11 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	case upstreamProtocolModeOpenAIH1Fallback:
 		// 显式禁用 HTTP/2，确保代理不兼容场景回退到 HTTP/1.1。
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
+	case upstreamProtocolModeAnthropicStreamH1:
+		// 强制 HTTP/1.1：禁止并发 Anthropic 流共享同一条 HTTP/2 连接，
+		// 避免多路复用跨流串帧（不同请求的 SSE 内容互相污染）。
 		transport.ForceAttemptHTTP2 = false
 		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	}

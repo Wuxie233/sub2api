@@ -9,6 +9,10 @@ type HTTPUpstreamProfile string
 const (
 	HTTPUpstreamProfileDefault HTTPUpstreamProfile = ""
 	HTTPUpstreamProfileOpenAI  HTTPUpstreamProfile = "openai"
+	// HTTPUpstreamProfileAnthropicStream pins Anthropic stream:true upstream
+	// requests to HTTP/1.1: HTTP/2 multiplexing leaked frames across concurrent
+	// streams sharing one account's connection. Do not restore HTTP/2 here.
+	HTTPUpstreamProfileAnthropicStream HTTPUpstreamProfile = "anthropic_stream"
 )
 
 type httpUpstreamProfileContextKey struct{}
@@ -34,7 +38,7 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 		return HTTPUpstreamProfileDefault
 	}
 	switch profile {
-	case HTTPUpstreamProfileOpenAI:
+	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileAnthropicStream:
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault

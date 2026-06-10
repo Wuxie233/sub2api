@@ -417,6 +417,10 @@ var ErrNoAvailableAccounts = errors.New("no available accounts")
 // ErrClaudeCodeOnly 表示分组仅允许 Claude Code 客户端访问
 var ErrClaudeCodeOnly = errors.New("this group only allows Claude Code clients")
 
+// errStreamContaminated: a second message_start in one SSE response means another
+// request's stream bled in; abort so foreign content is never forwarded to the client.
+var errStreamContaminated = errors.New("sse stream contamination detected: duplicate message_start")
+
 // allowedHeaders 白名单headers（参考CRS项目）
 var allowedHeaders = map[string]bool{
 	"accept":                                    true,
@@ -4694,6 +4698,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, err
 	}
 
+	if reqStream {
+		ctx = WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileAnthropicStream)
+	}
+
 	// 重试循环
 	var resp *http.Response
 	lastWireBody := body
@@ -5223,6 +5231,10 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		if err := input.Parsed.ReplaceBody(input.Body); err != nil {
 			return nil, err
 		}
+	}
+
+	if input.RequestStream {
+		ctx = WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileAnthropicStream)
 	}
 
 	var resp *http.Response
@@ -7747,6 +7759,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	needModelReplace := originalModel != mappedModel
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
 	sawTerminalEvent := false
+	sawMessageStart := false
 
 	pendingEventLines := make([]string, 0, 4)
 
@@ -7800,6 +7813,12 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		eventType, _ := event["type"].(string)
 		if eventName == "" {
 			eventName = eventType
+		}
+		if eventType == "message_start" {
+			if sawMessageStart {
+				return nil, dataLine, nil, errStreamContaminated
+			}
+			sawMessageStart = true
 		}
 		eventChanged := false
 
@@ -7939,6 +7958,10 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				outputBlocks, data, usagePatch, err := processSSEEvent(pendingEventLines)
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
+					if errors.Is(err, errStreamContaminated) {
+						logger.LegacyPrintf("service.gateway", "SSE contamination: duplicate message_start (account=%d model=%s); aborting stream, foreign content not forwarded", account.ID, originalModel)
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, err
+					}
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 					}
