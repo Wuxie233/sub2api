@@ -10,7 +10,7 @@ Use this skill only in `/root/CODE/sub2api-fork`. This is the owner's private fo
 ## Safety Contract
 
 - Do not read, print, edit, copy, or rotate `/opt/sub2api/.env`.
-- Do not push to `origin` or `upstream` unless the owner explicitly asks.
+- Push to `origin` (`Wuxie233/sub2api`) by default after green verification and a healthy deploy — no need to ask. NEVER push to `upstream` (`Wei-Shaw/sub2api`) and NEVER force-push.
 - Do not run `git reset --hard`, broad `git clean`, `docker compose down`, volume removal, image prune, or database destructive commands.
 - Do not restart postgres, redis, proxy, or unrelated containers. The only allowed deploy action is app-only recreate of `sub2api`.
 - If a conflict changes product behavior rather than code mechanics, ask one business-level question. Resolve mechanical conflicts yourself.
@@ -59,7 +59,7 @@ Use this skill only in `/root/CODE/sub2api-fork`. This is the owner's private fo
    - Confirm `git diff --name-only --diff-filter=U` is empty.
    - Stage only intended tracked merge changes and generated files.
    - Create a local commit such as `merge upstream main`.
-   - Do not push.
+   - Do not push yet; the push happens after a healthy deploy (step 13).
 8. Build a fresh local image from the repo root `Dockerfile`:
    - Read version from `backend/cmd/server/VERSION`.
    - Tag as `sub2api-local:<version>-upstream-<YYYYMMDDHHMM>` or a similarly specific short description.
@@ -84,6 +84,10 @@ Use this skill only in `/root/CODE/sub2api-fork`. This is the owner's private fo
    - Upstream commit integrated.
    - Local commit hash.
    - Verification commands and any warnings.
+13. Push to origin (default):
+   - After green verification and a healthy deploy, `git push origin main` by default — no need to ask.
+   - Confirm the push is a fast-forward (`git merge-base --is-ancestor origin/main main`) before pushing; do not force-push.
+   - Push only to `origin` (`Wuxie233/sub2api`). NEVER push to `upstream` (`Wei-Shaw/sub2api`).
 
 ## Rollback
 
@@ -99,7 +103,7 @@ If the new app is unhealthy or behavior regresses:
 Report in Chinese with:
 
 - upstream commit/tag integrated;
-- local commit hash, without claiming it was pushed;
+- local commit hash and the push result (pushed to `origin` by default, or why not);
 - new Docker image tag and old rollback image tag;
 - override backup path;
 - verification commands that passed;
