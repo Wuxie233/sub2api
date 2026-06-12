@@ -136,6 +136,9 @@ docs/*
 !docs/legal/*.md
 .serena/
 .codex/
+.codegraph/
+.omo/
+.playwright-mcp/
 frontend/coverage/
 aicodex
 output/
