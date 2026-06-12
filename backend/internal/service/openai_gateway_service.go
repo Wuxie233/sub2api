@@ -7151,10 +7151,13 @@ func buildOpenAIFastPolicyBlockedWSEvent(err *OpenAIFastBlockedError) []byte {
 }
 
 func dropInvalidPlaceholderToolsInOpenAIBody(body []byte) ([]byte, bool, error) {
-	if len(body) == 0 || !bytes.Contains(body, []byte(`"tools"`)) {
+	if len(body) == 0 {
 		return body, false, nil
 	}
 	if gjson.ValidBytes(body) && !openAIRequestBodyHasInvalidPlaceholderTools(body) {
+		return body, false, nil
+	}
+	if !gjson.ValidBytes(body) && !bytes.Contains(body, []byte(`"tools"`)) {
 		return body, false, nil
 	}
 
@@ -7173,7 +7176,7 @@ func dropInvalidPlaceholderToolsInOpenAIBody(body []byte) ([]byte, bool, error) 
 }
 
 func openAIRequestBodyHasInvalidPlaceholderTools(body []byte) bool {
-	if len(body) == 0 || !bytes.Contains(body, []byte(`"tools"`)) || !gjson.ValidBytes(body) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return false
 	}
 	tools := gjson.GetBytes(body, "tools")

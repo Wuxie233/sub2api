@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
@@ -632,6 +633,16 @@ func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsBadTypesAndReserializes(t
 	second, ok := tools[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "web_search", second["type"])
+}
+
+func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsEscapedToolsKey(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","to` + "\\u006f" + `ls":[{"type":"None","name":"placeholder"},{"type":"function","name":"shell"}]}`)
+
+	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(out, `tools.#(type=="None")`).Exists())
+	require.Equal(t, "shell", gjson.GetBytes(out, "tools.0.name").String())
 }
 
 func TestDropInvalidPlaceholderToolsInOpenAIBody_NoopWhenNoTools(t *testing.T) {
