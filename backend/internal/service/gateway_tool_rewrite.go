@@ -307,15 +307,26 @@ func ensureToolInputSchemas(body []byte) ([]byte, []string) {
 		if !shouldMimicToolName(t.Get("type").String()) {
 			return true
 		}
+		changed := false
+		toolType := strings.TrimSpace(t.Get("type").String())
+		if t.Get("type").Exists() && (toolType == "" || toolType == "function") {
+			if next, err := sjson.DeleteBytes(body, fmt.Sprintf("tools.%d.type", idx)); err == nil {
+				body = next
+				changed = true
+			}
+		}
 		sc := t.Get("input_schema")
-		if sc.IsObject() && len(sc.Map()) > 0 {
+		if !sc.IsObject() || len(sc.Map()) == 0 {
+			next, err := sjson.SetRawBytes(body, fmt.Sprintf("tools.%d.input_schema", idx), []byte(`{"type":"object"}`))
+			if err != nil {
+				return true
+			}
+			body = next
+			changed = true
+		}
+		if !changed {
 			return true
 		}
-		next, err := sjson.SetRawBytes(body, fmt.Sprintf("tools.%d.input_schema", idx), []byte(`{"type":"object"}`))
-		if err != nil {
-			return true
-		}
-		body = next
 		name := t.Get("name").String()
 		if name == "" {
 			name = fmt.Sprintf("#%d", idx)
