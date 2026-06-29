@@ -87,6 +87,7 @@ type Config struct {
 	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
 	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
+	Pulse                   PulseConfig                   `mapstructure:"pulse"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
 	RunMode                 string                        `mapstructure:"run_mode" yaml:"run_mode"`
 	Timezone                string                        `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
@@ -136,6 +137,11 @@ type GeminiOAuthConfig struct {
 	ClientID     string `mapstructure:"client_id"`
 	ClientSecret string `mapstructure:"client_secret"`
 	Scopes       string `mapstructure:"scopes"`
+}
+
+type PulseConfig struct {
+	Token     string `mapstructure:"token"`
+	AccountID int64  `mapstructure:"account_id"`
 }
 
 type GeminiQuotaConfig struct {
@@ -1624,6 +1630,9 @@ func setDefaults() {
 	viper.SetDefault("billing.minimum_balance_reserve", 0.000001)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
+
+	viper.SetDefault("pulse.token", "")
+	viper.SetDefault("pulse.account_id", int64(0))
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)

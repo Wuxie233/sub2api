@@ -38,6 +38,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		service.ProviderSet,
 		payment.ProviderSet,
 		middleware.ProviderSet,
+		wire.Bind(new(handler.PulseUsageProvider), new(*service.PulseService)),
 		handler.ProviderSet,
 
 		// Server layer ProviderSet

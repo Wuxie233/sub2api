@@ -636,6 +636,8 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 		apiPaths := []string{
 			"/api/users",
+			"/pulse",
+			"/pulse/api/usage",
 			"/v1/models",
 			"/v1beta/chat",
 			"/backend-api/codex/responses",

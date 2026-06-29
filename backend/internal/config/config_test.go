@@ -81,6 +81,23 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	}
 }
 
+func TestLoadPulseConfigFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PULSE_TOKEN", "pulse-secret")
+	t.Setenv("PULSE_ACCOUNT_ID", "42")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Pulse.Token != "pulse-secret" {
+		t.Fatalf("Pulse.Token = %q, want pulse-secret", cfg.Pulse.Token)
+	}
+	if cfg.Pulse.AccountID != 42 {
+		t.Fatalf("Pulse.AccountID = %d, want 42", cfg.Pulse.AccountID)
+	}
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
