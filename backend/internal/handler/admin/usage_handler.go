@@ -21,10 +21,11 @@ import (
 
 // UsageHandler handles admin usage-related requests
 type UsageHandler struct {
-	usageService   *service.UsageService
-	apiKeyService  *service.APIKeyService
-	adminService   service.AdminService
-	cleanupService *service.UsageCleanupService
+	usageService        *service.UsageService
+	apiKeyService       *service.APIKeyService
+	adminService        service.AdminService
+	cleanupService      *service.UsageCleanupService
+	usageCaptureService *service.UsageCaptureService
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -33,12 +34,14 @@ func NewUsageHandler(
 	apiKeyService *service.APIKeyService,
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
+	usageCaptureService *service.UsageCaptureService,
 ) *UsageHandler {
 	return &UsageHandler{
-		usageService:   usageService,
-		apiKeyService:  apiKeyService,
-		adminService:   adminService,
-		cleanupService: cleanupService,
+		usageService:        usageService,
+		apiKeyService:       apiKeyService,
+		adminService:        adminService,
+		cleanupService:      cleanupService,
+		usageCaptureService: usageCaptureService,
 	}
 }
 

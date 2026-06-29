@@ -654,6 +654,7 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	captureService        *UsageCaptureService
 }
 
 // NewGatewayService creates a new GatewayService
@@ -685,6 +686,7 @@ func NewGatewayService(
 	resolver *ModelPricingResolver,
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	captureService *UsageCaptureService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -721,6 +723,7 @@ func NewGatewayService(
 		resolver:              resolver,
 		balanceNotifyService:  balanceNotifyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		captureService:        captureService,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
@@ -8112,6 +8115,7 @@ type streamingResult struct {
 func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool) (*streamingResult, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
+	acc := CaptureAccumulatorFromGinOrContext(c, ctx)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -8126,6 +8130,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	// 透传其他响应头
 	if v := resp.Header.Get("x-request-id"); v != "" {
 		c.Header("x-request-id", v)
+	}
+	if acc != nil {
+		acc.SetStatusAndHeaders(resp.StatusCode, CloneHTTPHeaderForCapture(c.Writer.Header()))
 	}
 
 	w := c.Writer
@@ -8458,6 +8465,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						}
 						flusher.Flush()
 						lastDataAt = time.Now()
+						if acc != nil {
+							acc.AppendStream(restored)
+						}
 					}
 					if data != "" {
 						if firstTokenMs == nil && data != "[DONE]" {
@@ -8745,6 +8755,7 @@ func (s *GatewayService) resolveCacheTTLUsageOverrideTarget(ctx context.Context,
 func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*ClaudeUsage, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
+	acc := CaptureAccumulatorFromGinOrContext(c, ctx)
 
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, anthropicTooLargeError)
 	if err != nil {
@@ -8812,6 +8823,9 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	body = reverseToolNamesIfPresent(c, body)
 
 	// 写入响应
+	if acc != nil {
+		acc.SetNonStreamResponse(body, resp.StatusCode, CloneHTTPHeaderForCapture(c.Writer.Header()))
+	}
 	c.Data(resp.StatusCode, contentType, body)
 
 	return &response.Usage, nil
@@ -8863,6 +8877,7 @@ type RecordUsageInput struct {
 	ForceCacheBilling  bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService      APIKeyQuotaUpdater // 可选：用于更新API Key配额
 	QuotaPlatform      string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
+	Capture            CaptureSnapshot
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -9374,6 +9389,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		APIKeyService:      input.APIKeyService,
 		QuotaPlatform:      input.QuotaPlatform,
 		ChannelUsageFields: input.ChannelUsageFields,
+		Capture:            input.Capture,
 	}, &recordUsageOpts{})
 }
 
@@ -9437,6 +9453,7 @@ type recordUsageCoreInput struct {
 	APIKeyService      APIKeyQuotaUpdater
 	QuotaPlatform      string
 	ChannelUsageFields
+	Capture CaptureSnapshot
 }
 
 // recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
@@ -9528,6 +9545,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		s.captureUsageBestEffort(ctx, usageLog, result, input)
 		return nil
 	}
 
@@ -9556,8 +9574,50 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	s.captureUsageBestEffort(ctx, usageLog, result, input)
 
 	return nil
+}
+
+func (s *GatewayService) captureUsageBestEffort(ctx context.Context, usageLog *UsageLog, result *ForwardResult, input *recordUsageCoreInput) {
+	if s == nil || s.captureService == nil || !s.captureService.Enabled() || usageLog == nil || result == nil || input == nil {
+		return
+	}
+	snapshot := input.Capture
+	if len(snapshot.RequestBody) == 0 && len(snapshot.ResponseBody) == 0 && snapshot.StatusCode == 0 {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.LegacyPrintf("service.usage_capture", "[UsageCapture] panic recovered: request_id=%s panic=%v", usageLog.RequestID, recovered)
+		}
+	}()
+	endpoint := strings.TrimSpace(input.InboundEndpoint)
+	if endpoint == "" {
+		endpoint = snapshot.Path
+	}
+	s.captureService.CaptureBestEffort(ctx, CaptureInput{
+		RequestID:         usageLog.RequestID,
+		APIKeyID:          optionalInt64Ptr(usageLog.APIKeyID),
+		UsageLogID:        optionalInt64Ptr(usageLog.ID),
+		UserID:            optionalInt64Ptr(usageLog.UserID),
+		AccountID:         optionalInt64Ptr(usageLog.AccountID),
+		Provider:          PlatformAnthropic,
+		Model:             usageLog.Model,
+		Endpoint:          endpoint,
+		Stream:            result.Stream,
+		StatusCode:        snapshot.StatusCode,
+		DurationMs:        int64(result.Duration.Milliseconds()),
+		Method:            snapshot.Method,
+		Path:              snapshot.Path,
+		RequestHeaders:    snapshot.RequestHeaders,
+		ResponseHeaders:   snapshot.ResponseHeaders,
+		RequestBody:       snapshot.RequestBody,
+		ResponseBody:      snapshot.ResponseBody,
+		Timestamp:         usageLog.CreatedAt,
+		Truncated:         snapshot.Truncated,
+		ClientDisconnect:  snapshot.ClientDisconnect,
+	})
 }
 
 // calculateRecordUsageCost 根据请求类型和选项计算费用。

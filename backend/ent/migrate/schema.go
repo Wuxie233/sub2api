@@ -1473,6 +1473,58 @@ var (
 			},
 		},
 	}
+	// UsageRequestCapturesColumns holds the columns for the "usage_request_captures" table.
+	UsageRequestCapturesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "request_id", Type: field.TypeString, Size: 64},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "usage_log_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "provider", Type: field.TypeString, Size: 50},
+		{Name: "model", Type: field.TypeString, Size: 100},
+		{Name: "endpoint", Type: field.TypeString, Size: 128},
+		{Name: "stream", Type: field.TypeBool, Default: false},
+		{Name: "status_code", Type: field.TypeInt},
+		{Name: "duration_ms", Type: field.TypeInt64},
+		{Name: "request_bytes", Type: field.TypeInt64},
+		{Name: "response_bytes", Type: field.TypeInt64},
+		{Name: "compressed_bytes", Type: field.TypeInt64},
+		{Name: "truncated", Type: field.TypeBool, Default: false},
+		{Name: "truncate_reason", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "capture_schema_version", Type: field.TypeInt, Default: 1},
+		{Name: "payload_gzip", Type: field.TypeBytes, SchemaType: map[string]string{"postgres": "bytea"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// UsageRequestCapturesTable holds the schema information for the "usage_request_captures" table.
+	UsageRequestCapturesTable = &schema.Table{
+		Name:       "usage_request_captures",
+		Columns:    UsageRequestCapturesColumns,
+		PrimaryKey: []*schema.Column{UsageRequestCapturesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usagerequestcapture_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsageRequestCapturesColumns[1]},
+			},
+			{
+				Name:    "usagerequestcapture_request_id_api_key_id",
+				Unique:  true,
+				Columns: []*schema.Column{UsageRequestCapturesColumns[1], UsageRequestCapturesColumns[2]},
+			},
+			{
+				Name:    "usagerequestcapture_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageRequestCapturesColumns[20]},
+			},
+			{
+				Name:    "usagerequestcapture_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsageRequestCapturesColumns[4]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1804,6 +1856,7 @@ var (
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
+		UsageRequestCapturesTable,
 		UsersTable,
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
@@ -1926,6 +1979,9 @@ func init() {
 	UsageLogsTable.ForeignKeys[4].RefTable = UserSubscriptionsTable
 	UsageLogsTable.Annotation = &entsql.Annotation{
 		Table: "usage_logs",
+	}
+	UsageRequestCapturesTable.Annotation = &entsql.Annotation{
+		Table: "usage_request_captures",
 	}
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",

@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	ErrUsageLogNotFound = infraerrors.NotFound("USAGE_LOG_NOT_FOUND", "usage log not found")
+	ErrUsageLogNotFound            = infraerrors.NotFound("USAGE_LOG_NOT_FOUND", "usage log not found")
+	ErrUsageRequestCaptureNotFound = infraerrors.NotFound("USAGE_REQUEST_CAPTURE_NOT_FOUND", "usage request capture not found")
 )
 
 // CreateUsageLogRequest 创建使用日志请求

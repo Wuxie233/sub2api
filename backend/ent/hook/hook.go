@@ -357,6 +357,18 @@ func (f UsageLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UsageLogMutation", m)
 }
 
+// The UsageRequestCaptureFunc type is an adapter to allow the use of ordinary
+// function as UsageRequestCapture mutator.
+type UsageRequestCaptureFunc func(context.Context, *ent.UsageRequestCaptureMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UsageRequestCaptureFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UsageRequestCaptureMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UsageRequestCaptureMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)

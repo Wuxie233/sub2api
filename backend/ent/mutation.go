@@ -42,6 +42,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -89,6 +90,7 @@ const (
 	TypeTLSFingerprintProfile         = "TLSFingerprintProfile"
 	TypeUsageCleanupTask              = "UsageCleanupTask"
 	TypeUsageLog                      = "UsageLog"
+	TypeUsageRequestCapture           = "UsageRequestCapture"
 	TypeUser                          = "User"
 	TypeUserAllowedGroup              = "UserAllowedGroup"
 	TypeUserAttributeDefinition       = "UserAttributeDefinition"
@@ -38670,6 +38672,1812 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog edge %s", name)
+}
+
+// UsageRequestCaptureMutation represents an operation that mutates the UsageRequestCapture nodes in the graph.
+type UsageRequestCaptureMutation struct {
+	config
+	op                        Op
+	typ                       string
+	id                        *int64
+	request_id                *string
+	api_key_id                *int64
+	addapi_key_id             *int64
+	usage_log_id              *int64
+	addusage_log_id           *int64
+	user_id                   *int64
+	adduser_id                *int64
+	account_id                *int64
+	addaccount_id             *int64
+	provider                  *string
+	model                     *string
+	endpoint                  *string
+	stream                    *bool
+	status_code               *int
+	addstatus_code            *int
+	duration_ms               *int64
+	addduration_ms            *int64
+	request_bytes             *int64
+	addrequest_bytes          *int64
+	response_bytes            *int64
+	addresponse_bytes         *int64
+	compressed_bytes          *int64
+	addcompressed_bytes       *int64
+	truncated                 *bool
+	truncate_reason           *string
+	capture_schema_version    *int
+	addcapture_schema_version *int
+	payload_gzip              *[]byte
+	created_at                *time.Time
+	expires_at                *time.Time
+	clearedFields             map[string]struct{}
+	done                      bool
+	oldValue                  func(context.Context) (*UsageRequestCapture, error)
+	predicates                []predicate.UsageRequestCapture
+}
+
+var _ ent.Mutation = (*UsageRequestCaptureMutation)(nil)
+
+// usagerequestcaptureOption allows management of the mutation configuration using functional options.
+type usagerequestcaptureOption func(*UsageRequestCaptureMutation)
+
+// newUsageRequestCaptureMutation creates new mutation for the UsageRequestCapture entity.
+func newUsageRequestCaptureMutation(c config, op Op, opts ...usagerequestcaptureOption) *UsageRequestCaptureMutation {
+	m := &UsageRequestCaptureMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUsageRequestCapture,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUsageRequestCaptureID sets the ID field of the mutation.
+func withUsageRequestCaptureID(id int64) usagerequestcaptureOption {
+	return func(m *UsageRequestCaptureMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UsageRequestCapture
+		)
+		m.oldValue = func(ctx context.Context) (*UsageRequestCapture, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UsageRequestCapture.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUsageRequestCapture sets the old UsageRequestCapture of the mutation.
+func withUsageRequestCapture(node *UsageRequestCapture) usagerequestcaptureOption {
+	return func(m *UsageRequestCaptureMutation) {
+		m.oldValue = func(context.Context) (*UsageRequestCapture, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UsageRequestCaptureMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UsageRequestCaptureMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UsageRequestCaptureMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UsageRequestCaptureMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UsageRequestCapture.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *UsageRequestCaptureMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *UsageRequestCaptureMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *UsageRequestCaptureMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *UsageRequestCaptureMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *UsageRequestCaptureMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *UsageRequestCaptureMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *UsageRequestCaptureMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[usagerequestcapture.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *UsageRequestCaptureMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, usagerequestcapture.FieldAPIKeyID)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *UsageRequestCaptureMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *UsageRequestCaptureMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *UsageRequestCaptureMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *UsageRequestCaptureMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[usagerequestcapture.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *UsageRequestCaptureMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, usagerequestcapture.FieldUsageLogID)
+}
+
+// SetUserID sets the "user_id" field.
+func (m *UsageRequestCaptureMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *UsageRequestCaptureMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *UsageRequestCaptureMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (m *UsageRequestCaptureMutation) ClearUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+	m.clearedFields[usagerequestcapture.FieldUserID] = struct{}{}
+}
+
+// UserIDCleared returns if the "user_id" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) UserIDCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldUserID]
+	return ok
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *UsageRequestCaptureMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+	delete(m.clearedFields, usagerequestcapture.FieldUserID)
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *UsageRequestCaptureMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *UsageRequestCaptureMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldAccountID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *UsageRequestCaptureMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (m *UsageRequestCaptureMutation) ClearAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+	m.clearedFields[usagerequestcapture.FieldAccountID] = struct{}{}
+}
+
+// AccountIDCleared returns if the "account_id" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) AccountIDCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldAccountID]
+	return ok
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *UsageRequestCaptureMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+	delete(m.clearedFields, usagerequestcapture.FieldAccountID)
+}
+
+// SetProvider sets the "provider" field.
+func (m *UsageRequestCaptureMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *UsageRequestCaptureMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *UsageRequestCaptureMutation) ResetProvider() {
+	m.provider = nil
+}
+
+// SetModel sets the "model" field.
+func (m *UsageRequestCaptureMutation) SetModel(s string) {
+	m.model = &s
+}
+
+// Model returns the value of the "model" field in the mutation.
+func (m *UsageRequestCaptureMutation) Model() (r string, exists bool) {
+	v := m.model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModel returns the old "model" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModel: %w", err)
+	}
+	return oldValue.Model, nil
+}
+
+// ResetModel resets all changes to the "model" field.
+func (m *UsageRequestCaptureMutation) ResetModel() {
+	m.model = nil
+}
+
+// SetEndpoint sets the "endpoint" field.
+func (m *UsageRequestCaptureMutation) SetEndpoint(s string) {
+	m.endpoint = &s
+}
+
+// Endpoint returns the value of the "endpoint" field in the mutation.
+func (m *UsageRequestCaptureMutation) Endpoint() (r string, exists bool) {
+	v := m.endpoint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEndpoint returns the old "endpoint" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldEndpoint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEndpoint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEndpoint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEndpoint: %w", err)
+	}
+	return oldValue.Endpoint, nil
+}
+
+// ResetEndpoint resets all changes to the "endpoint" field.
+func (m *UsageRequestCaptureMutation) ResetEndpoint() {
+	m.endpoint = nil
+}
+
+// SetStream sets the "stream" field.
+func (m *UsageRequestCaptureMutation) SetStream(b bool) {
+	m.stream = &b
+}
+
+// Stream returns the value of the "stream" field in the mutation.
+func (m *UsageRequestCaptureMutation) Stream() (r bool, exists bool) {
+	v := m.stream
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStream returns the old "stream" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldStream(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStream is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStream requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStream: %w", err)
+	}
+	return oldValue.Stream, nil
+}
+
+// ResetStream resets all changes to the "stream" field.
+func (m *UsageRequestCaptureMutation) ResetStream() {
+	m.stream = nil
+}
+
+// SetStatusCode sets the "status_code" field.
+func (m *UsageRequestCaptureMutation) SetStatusCode(i int) {
+	m.status_code = &i
+	m.addstatus_code = nil
+}
+
+// StatusCode returns the value of the "status_code" field in the mutation.
+func (m *UsageRequestCaptureMutation) StatusCode() (r int, exists bool) {
+	v := m.status_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatusCode returns the old "status_code" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldStatusCode(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatusCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatusCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatusCode: %w", err)
+	}
+	return oldValue.StatusCode, nil
+}
+
+// AddStatusCode adds i to the "status_code" field.
+func (m *UsageRequestCaptureMutation) AddStatusCode(i int) {
+	if m.addstatus_code != nil {
+		*m.addstatus_code += i
+	} else {
+		m.addstatus_code = &i
+	}
+}
+
+// AddedStatusCode returns the value that was added to the "status_code" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedStatusCode() (r int, exists bool) {
+	v := m.addstatus_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetStatusCode resets all changes to the "status_code" field.
+func (m *UsageRequestCaptureMutation) ResetStatusCode() {
+	m.status_code = nil
+	m.addstatus_code = nil
+}
+
+// SetDurationMs sets the "duration_ms" field.
+func (m *UsageRequestCaptureMutation) SetDurationMs(i int64) {
+	m.duration_ms = &i
+	m.addduration_ms = nil
+}
+
+// DurationMs returns the value of the "duration_ms" field in the mutation.
+func (m *UsageRequestCaptureMutation) DurationMs() (r int64, exists bool) {
+	v := m.duration_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDurationMs returns the old "duration_ms" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldDurationMs(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDurationMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDurationMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDurationMs: %w", err)
+	}
+	return oldValue.DurationMs, nil
+}
+
+// AddDurationMs adds i to the "duration_ms" field.
+func (m *UsageRequestCaptureMutation) AddDurationMs(i int64) {
+	if m.addduration_ms != nil {
+		*m.addduration_ms += i
+	} else {
+		m.addduration_ms = &i
+	}
+}
+
+// AddedDurationMs returns the value that was added to the "duration_ms" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedDurationMs() (r int64, exists bool) {
+	v := m.addduration_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetDurationMs resets all changes to the "duration_ms" field.
+func (m *UsageRequestCaptureMutation) ResetDurationMs() {
+	m.duration_ms = nil
+	m.addduration_ms = nil
+}
+
+// SetRequestBytes sets the "request_bytes" field.
+func (m *UsageRequestCaptureMutation) SetRequestBytes(i int64) {
+	m.request_bytes = &i
+	m.addrequest_bytes = nil
+}
+
+// RequestBytes returns the value of the "request_bytes" field in the mutation.
+func (m *UsageRequestCaptureMutation) RequestBytes() (r int64, exists bool) {
+	v := m.request_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestBytes returns the old "request_bytes" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldRequestBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestBytes: %w", err)
+	}
+	return oldValue.RequestBytes, nil
+}
+
+// AddRequestBytes adds i to the "request_bytes" field.
+func (m *UsageRequestCaptureMutation) AddRequestBytes(i int64) {
+	if m.addrequest_bytes != nil {
+		*m.addrequest_bytes += i
+	} else {
+		m.addrequest_bytes = &i
+	}
+}
+
+// AddedRequestBytes returns the value that was added to the "request_bytes" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedRequestBytes() (r int64, exists bool) {
+	v := m.addrequest_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestBytes resets all changes to the "request_bytes" field.
+func (m *UsageRequestCaptureMutation) ResetRequestBytes() {
+	m.request_bytes = nil
+	m.addrequest_bytes = nil
+}
+
+// SetResponseBytes sets the "response_bytes" field.
+func (m *UsageRequestCaptureMutation) SetResponseBytes(i int64) {
+	m.response_bytes = &i
+	m.addresponse_bytes = nil
+}
+
+// ResponseBytes returns the value of the "response_bytes" field in the mutation.
+func (m *UsageRequestCaptureMutation) ResponseBytes() (r int64, exists bool) {
+	v := m.response_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseBytes returns the old "response_bytes" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldResponseBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseBytes: %w", err)
+	}
+	return oldValue.ResponseBytes, nil
+}
+
+// AddResponseBytes adds i to the "response_bytes" field.
+func (m *UsageRequestCaptureMutation) AddResponseBytes(i int64) {
+	if m.addresponse_bytes != nil {
+		*m.addresponse_bytes += i
+	} else {
+		m.addresponse_bytes = &i
+	}
+}
+
+// AddedResponseBytes returns the value that was added to the "response_bytes" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedResponseBytes() (r int64, exists bool) {
+	v := m.addresponse_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetResponseBytes resets all changes to the "response_bytes" field.
+func (m *UsageRequestCaptureMutation) ResetResponseBytes() {
+	m.response_bytes = nil
+	m.addresponse_bytes = nil
+}
+
+// SetCompressedBytes sets the "compressed_bytes" field.
+func (m *UsageRequestCaptureMutation) SetCompressedBytes(i int64) {
+	m.compressed_bytes = &i
+	m.addcompressed_bytes = nil
+}
+
+// CompressedBytes returns the value of the "compressed_bytes" field in the mutation.
+func (m *UsageRequestCaptureMutation) CompressedBytes() (r int64, exists bool) {
+	v := m.compressed_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompressedBytes returns the old "compressed_bytes" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldCompressedBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompressedBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompressedBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompressedBytes: %w", err)
+	}
+	return oldValue.CompressedBytes, nil
+}
+
+// AddCompressedBytes adds i to the "compressed_bytes" field.
+func (m *UsageRequestCaptureMutation) AddCompressedBytes(i int64) {
+	if m.addcompressed_bytes != nil {
+		*m.addcompressed_bytes += i
+	} else {
+		m.addcompressed_bytes = &i
+	}
+}
+
+// AddedCompressedBytes returns the value that was added to the "compressed_bytes" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedCompressedBytes() (r int64, exists bool) {
+	v := m.addcompressed_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCompressedBytes resets all changes to the "compressed_bytes" field.
+func (m *UsageRequestCaptureMutation) ResetCompressedBytes() {
+	m.compressed_bytes = nil
+	m.addcompressed_bytes = nil
+}
+
+// SetTruncated sets the "truncated" field.
+func (m *UsageRequestCaptureMutation) SetTruncated(b bool) {
+	m.truncated = &b
+}
+
+// Truncated returns the value of the "truncated" field in the mutation.
+func (m *UsageRequestCaptureMutation) Truncated() (r bool, exists bool) {
+	v := m.truncated
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTruncated returns the old "truncated" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldTruncated(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTruncated is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTruncated requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTruncated: %w", err)
+	}
+	return oldValue.Truncated, nil
+}
+
+// ResetTruncated resets all changes to the "truncated" field.
+func (m *UsageRequestCaptureMutation) ResetTruncated() {
+	m.truncated = nil
+}
+
+// SetTruncateReason sets the "truncate_reason" field.
+func (m *UsageRequestCaptureMutation) SetTruncateReason(s string) {
+	m.truncate_reason = &s
+}
+
+// TruncateReason returns the value of the "truncate_reason" field in the mutation.
+func (m *UsageRequestCaptureMutation) TruncateReason() (r string, exists bool) {
+	v := m.truncate_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTruncateReason returns the old "truncate_reason" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldTruncateReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTruncateReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTruncateReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTruncateReason: %w", err)
+	}
+	return oldValue.TruncateReason, nil
+}
+
+// ClearTruncateReason clears the value of the "truncate_reason" field.
+func (m *UsageRequestCaptureMutation) ClearTruncateReason() {
+	m.truncate_reason = nil
+	m.clearedFields[usagerequestcapture.FieldTruncateReason] = struct{}{}
+}
+
+// TruncateReasonCleared returns if the "truncate_reason" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) TruncateReasonCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldTruncateReason]
+	return ok
+}
+
+// ResetTruncateReason resets all changes to the "truncate_reason" field.
+func (m *UsageRequestCaptureMutation) ResetTruncateReason() {
+	m.truncate_reason = nil
+	delete(m.clearedFields, usagerequestcapture.FieldTruncateReason)
+}
+
+// SetCaptureSchemaVersion sets the "capture_schema_version" field.
+func (m *UsageRequestCaptureMutation) SetCaptureSchemaVersion(i int) {
+	m.capture_schema_version = &i
+	m.addcapture_schema_version = nil
+}
+
+// CaptureSchemaVersion returns the value of the "capture_schema_version" field in the mutation.
+func (m *UsageRequestCaptureMutation) CaptureSchemaVersion() (r int, exists bool) {
+	v := m.capture_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCaptureSchemaVersion returns the old "capture_schema_version" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldCaptureSchemaVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCaptureSchemaVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCaptureSchemaVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCaptureSchemaVersion: %w", err)
+	}
+	return oldValue.CaptureSchemaVersion, nil
+}
+
+// AddCaptureSchemaVersion adds i to the "capture_schema_version" field.
+func (m *UsageRequestCaptureMutation) AddCaptureSchemaVersion(i int) {
+	if m.addcapture_schema_version != nil {
+		*m.addcapture_schema_version += i
+	} else {
+		m.addcapture_schema_version = &i
+	}
+}
+
+// AddedCaptureSchemaVersion returns the value that was added to the "capture_schema_version" field in this mutation.
+func (m *UsageRequestCaptureMutation) AddedCaptureSchemaVersion() (r int, exists bool) {
+	v := m.addcapture_schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCaptureSchemaVersion resets all changes to the "capture_schema_version" field.
+func (m *UsageRequestCaptureMutation) ResetCaptureSchemaVersion() {
+	m.capture_schema_version = nil
+	m.addcapture_schema_version = nil
+}
+
+// SetPayloadGzip sets the "payload_gzip" field.
+func (m *UsageRequestCaptureMutation) SetPayloadGzip(b []byte) {
+	m.payload_gzip = &b
+}
+
+// PayloadGzip returns the value of the "payload_gzip" field in the mutation.
+func (m *UsageRequestCaptureMutation) PayloadGzip() (r []byte, exists bool) {
+	v := m.payload_gzip
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPayloadGzip returns the old "payload_gzip" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldPayloadGzip(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPayloadGzip is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPayloadGzip requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPayloadGzip: %w", err)
+	}
+	return oldValue.PayloadGzip, nil
+}
+
+// ResetPayloadGzip resets all changes to the "payload_gzip" field.
+func (m *UsageRequestCaptureMutation) ResetPayloadGzip() {
+	m.payload_gzip = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UsageRequestCaptureMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UsageRequestCaptureMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UsageRequestCaptureMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *UsageRequestCaptureMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *UsageRequestCaptureMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the UsageRequestCapture entity.
+// If the UsageRequestCapture object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *UsageRequestCaptureMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[usagerequestcapture.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[usagerequestcapture.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *UsageRequestCaptureMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, usagerequestcapture.FieldExpiresAt)
+}
+
+// Where appends a list predicates to the UsageRequestCaptureMutation builder.
+func (m *UsageRequestCaptureMutation) Where(ps ...predicate.UsageRequestCapture) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UsageRequestCaptureMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UsageRequestCaptureMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UsageRequestCapture, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UsageRequestCaptureMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UsageRequestCaptureMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UsageRequestCapture).
+func (m *UsageRequestCaptureMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UsageRequestCaptureMutation) Fields() []string {
+	fields := make([]string, 0, 20)
+	if m.request_id != nil {
+		fields = append(fields, usagerequestcapture.FieldRequestID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, usagerequestcapture.FieldAPIKeyID)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, usagerequestcapture.FieldUsageLogID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, usagerequestcapture.FieldUserID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, usagerequestcapture.FieldAccountID)
+	}
+	if m.provider != nil {
+		fields = append(fields, usagerequestcapture.FieldProvider)
+	}
+	if m.model != nil {
+		fields = append(fields, usagerequestcapture.FieldModel)
+	}
+	if m.endpoint != nil {
+		fields = append(fields, usagerequestcapture.FieldEndpoint)
+	}
+	if m.stream != nil {
+		fields = append(fields, usagerequestcapture.FieldStream)
+	}
+	if m.status_code != nil {
+		fields = append(fields, usagerequestcapture.FieldStatusCode)
+	}
+	if m.duration_ms != nil {
+		fields = append(fields, usagerequestcapture.FieldDurationMs)
+	}
+	if m.request_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldRequestBytes)
+	}
+	if m.response_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldResponseBytes)
+	}
+	if m.compressed_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldCompressedBytes)
+	}
+	if m.truncated != nil {
+		fields = append(fields, usagerequestcapture.FieldTruncated)
+	}
+	if m.truncate_reason != nil {
+		fields = append(fields, usagerequestcapture.FieldTruncateReason)
+	}
+	if m.capture_schema_version != nil {
+		fields = append(fields, usagerequestcapture.FieldCaptureSchemaVersion)
+	}
+	if m.payload_gzip != nil {
+		fields = append(fields, usagerequestcapture.FieldPayloadGzip)
+	}
+	if m.created_at != nil {
+		fields = append(fields, usagerequestcapture.FieldCreatedAt)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, usagerequestcapture.FieldExpiresAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UsageRequestCaptureMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case usagerequestcapture.FieldRequestID:
+		return m.RequestID()
+	case usagerequestcapture.FieldAPIKeyID:
+		return m.APIKeyID()
+	case usagerequestcapture.FieldUsageLogID:
+		return m.UsageLogID()
+	case usagerequestcapture.FieldUserID:
+		return m.UserID()
+	case usagerequestcapture.FieldAccountID:
+		return m.AccountID()
+	case usagerequestcapture.FieldProvider:
+		return m.Provider()
+	case usagerequestcapture.FieldModel:
+		return m.Model()
+	case usagerequestcapture.FieldEndpoint:
+		return m.Endpoint()
+	case usagerequestcapture.FieldStream:
+		return m.Stream()
+	case usagerequestcapture.FieldStatusCode:
+		return m.StatusCode()
+	case usagerequestcapture.FieldDurationMs:
+		return m.DurationMs()
+	case usagerequestcapture.FieldRequestBytes:
+		return m.RequestBytes()
+	case usagerequestcapture.FieldResponseBytes:
+		return m.ResponseBytes()
+	case usagerequestcapture.FieldCompressedBytes:
+		return m.CompressedBytes()
+	case usagerequestcapture.FieldTruncated:
+		return m.Truncated()
+	case usagerequestcapture.FieldTruncateReason:
+		return m.TruncateReason()
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		return m.CaptureSchemaVersion()
+	case usagerequestcapture.FieldPayloadGzip:
+		return m.PayloadGzip()
+	case usagerequestcapture.FieldCreatedAt:
+		return m.CreatedAt()
+	case usagerequestcapture.FieldExpiresAt:
+		return m.ExpiresAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UsageRequestCaptureMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case usagerequestcapture.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case usagerequestcapture.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case usagerequestcapture.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case usagerequestcapture.FieldUserID:
+		return m.OldUserID(ctx)
+	case usagerequestcapture.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case usagerequestcapture.FieldProvider:
+		return m.OldProvider(ctx)
+	case usagerequestcapture.FieldModel:
+		return m.OldModel(ctx)
+	case usagerequestcapture.FieldEndpoint:
+		return m.OldEndpoint(ctx)
+	case usagerequestcapture.FieldStream:
+		return m.OldStream(ctx)
+	case usagerequestcapture.FieldStatusCode:
+		return m.OldStatusCode(ctx)
+	case usagerequestcapture.FieldDurationMs:
+		return m.OldDurationMs(ctx)
+	case usagerequestcapture.FieldRequestBytes:
+		return m.OldRequestBytes(ctx)
+	case usagerequestcapture.FieldResponseBytes:
+		return m.OldResponseBytes(ctx)
+	case usagerequestcapture.FieldCompressedBytes:
+		return m.OldCompressedBytes(ctx)
+	case usagerequestcapture.FieldTruncated:
+		return m.OldTruncated(ctx)
+	case usagerequestcapture.FieldTruncateReason:
+		return m.OldTruncateReason(ctx)
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		return m.OldCaptureSchemaVersion(ctx)
+	case usagerequestcapture.FieldPayloadGzip:
+		return m.OldPayloadGzip(ctx)
+	case usagerequestcapture.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case usagerequestcapture.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UsageRequestCapture field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageRequestCaptureMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case usagerequestcapture.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case usagerequestcapture.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case usagerequestcapture.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case usagerequestcapture.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case usagerequestcapture.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case usagerequestcapture.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case usagerequestcapture.FieldModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModel(v)
+		return nil
+	case usagerequestcapture.FieldEndpoint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEndpoint(v)
+		return nil
+	case usagerequestcapture.FieldStream:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStream(v)
+		return nil
+	case usagerequestcapture.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatusCode(v)
+		return nil
+	case usagerequestcapture.FieldDurationMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDurationMs(v)
+		return nil
+	case usagerequestcapture.FieldRequestBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestBytes(v)
+		return nil
+	case usagerequestcapture.FieldResponseBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseBytes(v)
+		return nil
+	case usagerequestcapture.FieldCompressedBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompressedBytes(v)
+		return nil
+	case usagerequestcapture.FieldTruncated:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTruncated(v)
+		return nil
+	case usagerequestcapture.FieldTruncateReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTruncateReason(v)
+		return nil
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCaptureSchemaVersion(v)
+		return nil
+	case usagerequestcapture.FieldPayloadGzip:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPayloadGzip(v)
+		return nil
+	case usagerequestcapture.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case usagerequestcapture.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCapture field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UsageRequestCaptureMutation) AddedFields() []string {
+	var fields []string
+	if m.addapi_key_id != nil {
+		fields = append(fields, usagerequestcapture.FieldAPIKeyID)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, usagerequestcapture.FieldUsageLogID)
+	}
+	if m.adduser_id != nil {
+		fields = append(fields, usagerequestcapture.FieldUserID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, usagerequestcapture.FieldAccountID)
+	}
+	if m.addstatus_code != nil {
+		fields = append(fields, usagerequestcapture.FieldStatusCode)
+	}
+	if m.addduration_ms != nil {
+		fields = append(fields, usagerequestcapture.FieldDurationMs)
+	}
+	if m.addrequest_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldRequestBytes)
+	}
+	if m.addresponse_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldResponseBytes)
+	}
+	if m.addcompressed_bytes != nil {
+		fields = append(fields, usagerequestcapture.FieldCompressedBytes)
+	}
+	if m.addcapture_schema_version != nil {
+		fields = append(fields, usagerequestcapture.FieldCaptureSchemaVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UsageRequestCaptureMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usagerequestcapture.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case usagerequestcapture.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case usagerequestcapture.FieldUserID:
+		return m.AddedUserID()
+	case usagerequestcapture.FieldAccountID:
+		return m.AddedAccountID()
+	case usagerequestcapture.FieldStatusCode:
+		return m.AddedStatusCode()
+	case usagerequestcapture.FieldDurationMs:
+		return m.AddedDurationMs()
+	case usagerequestcapture.FieldRequestBytes:
+		return m.AddedRequestBytes()
+	case usagerequestcapture.FieldResponseBytes:
+		return m.AddedResponseBytes()
+	case usagerequestcapture.FieldCompressedBytes:
+		return m.AddedCompressedBytes()
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		return m.AddedCaptureSchemaVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageRequestCaptureMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case usagerequestcapture.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case usagerequestcapture.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case usagerequestcapture.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case usagerequestcapture.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case usagerequestcapture.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddStatusCode(v)
+		return nil
+	case usagerequestcapture.FieldDurationMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDurationMs(v)
+		return nil
+	case usagerequestcapture.FieldRequestBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestBytes(v)
+		return nil
+	case usagerequestcapture.FieldResponseBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddResponseBytes(v)
+		return nil
+	case usagerequestcapture.FieldCompressedBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCompressedBytes(v)
+		return nil
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCaptureSchemaVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCapture numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UsageRequestCaptureMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(usagerequestcapture.FieldAPIKeyID) {
+		fields = append(fields, usagerequestcapture.FieldAPIKeyID)
+	}
+	if m.FieldCleared(usagerequestcapture.FieldUsageLogID) {
+		fields = append(fields, usagerequestcapture.FieldUsageLogID)
+	}
+	if m.FieldCleared(usagerequestcapture.FieldUserID) {
+		fields = append(fields, usagerequestcapture.FieldUserID)
+	}
+	if m.FieldCleared(usagerequestcapture.FieldAccountID) {
+		fields = append(fields, usagerequestcapture.FieldAccountID)
+	}
+	if m.FieldCleared(usagerequestcapture.FieldTruncateReason) {
+		fields = append(fields, usagerequestcapture.FieldTruncateReason)
+	}
+	if m.FieldCleared(usagerequestcapture.FieldExpiresAt) {
+		fields = append(fields, usagerequestcapture.FieldExpiresAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UsageRequestCaptureMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UsageRequestCaptureMutation) ClearField(name string) error {
+	switch name {
+	case usagerequestcapture.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case usagerequestcapture.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case usagerequestcapture.FieldUserID:
+		m.ClearUserID()
+		return nil
+	case usagerequestcapture.FieldAccountID:
+		m.ClearAccountID()
+		return nil
+	case usagerequestcapture.FieldTruncateReason:
+		m.ClearTruncateReason()
+		return nil
+	case usagerequestcapture.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCapture nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UsageRequestCaptureMutation) ResetField(name string) error {
+	switch name {
+	case usagerequestcapture.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case usagerequestcapture.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case usagerequestcapture.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case usagerequestcapture.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case usagerequestcapture.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case usagerequestcapture.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case usagerequestcapture.FieldModel:
+		m.ResetModel()
+		return nil
+	case usagerequestcapture.FieldEndpoint:
+		m.ResetEndpoint()
+		return nil
+	case usagerequestcapture.FieldStream:
+		m.ResetStream()
+		return nil
+	case usagerequestcapture.FieldStatusCode:
+		m.ResetStatusCode()
+		return nil
+	case usagerequestcapture.FieldDurationMs:
+		m.ResetDurationMs()
+		return nil
+	case usagerequestcapture.FieldRequestBytes:
+		m.ResetRequestBytes()
+		return nil
+	case usagerequestcapture.FieldResponseBytes:
+		m.ResetResponseBytes()
+		return nil
+	case usagerequestcapture.FieldCompressedBytes:
+		m.ResetCompressedBytes()
+		return nil
+	case usagerequestcapture.FieldTruncated:
+		m.ResetTruncated()
+		return nil
+	case usagerequestcapture.FieldTruncateReason:
+		m.ResetTruncateReason()
+		return nil
+	case usagerequestcapture.FieldCaptureSchemaVersion:
+		m.ResetCaptureSchemaVersion()
+		return nil
+	case usagerequestcapture.FieldPayloadGzip:
+		m.ResetPayloadGzip()
+		return nil
+	case usagerequestcapture.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case usagerequestcapture.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCapture field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UsageRequestCaptureMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UsageRequestCaptureMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UsageRequestCaptureMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UsageRequestCaptureMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UsageRequestCaptureMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UsageRequestCaptureMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UsageRequestCaptureMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown UsageRequestCapture unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UsageRequestCaptureMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown UsageRequestCapture edge %s", name)
 }
 
 // UserMutation represents an operation that mutates the User nodes in the graph.

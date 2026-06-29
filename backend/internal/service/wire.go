@@ -195,6 +195,13 @@ func ProvideUsageCleanupService(repo UsageCleanupRepository, timingWheel *Timing
 	return svc
 }
 
+// ProvideUsageCaptureRetentionService creates and starts usage capture retention cleanup.
+func ProvideUsageCaptureRetentionService(repo UsageRequestCaptureRepository, cfg *config.Config) *UsageCaptureRetentionService {
+	svc := NewUsageCaptureRetentionService(repo, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideAccountExpiryService creates and starts AccountExpiryService.
 func ProvideAccountExpiryService(accountRepo AccountRepository) *AccountExpiryService {
 	svc := NewAccountExpiryService(accountRepo, time.Minute)
@@ -616,6 +623,8 @@ var ProviderSet = wire.NewSet(
 	ProvideSubscriptionExpiryService,
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
+	NewUsageCaptureService,
+	ProvideUsageCaptureRetentionService,
 	ProvideUsageCleanupService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,

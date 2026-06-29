@@ -55,6 +55,7 @@ type GatewayHandler struct {
 	maxAccountSwitchesGemini  int
 	cfg                       *config.Config
 	settingService            *service.SettingService
+	captureService            *service.UsageCaptureService
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -73,6 +74,7 @@ func NewGatewayHandler(
 	userMsgQueueService *service.UserMessageQueueService,
 	cfg *config.Config,
 	settingService *service.SettingService,
+	captureService *service.UsageCaptureService,
 ) *GatewayHandler {
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 10
@@ -110,6 +112,7 @@ func NewGatewayHandler(
 		maxAccountSwitchesGemini:  maxAccountSwitchesGemini,
 		cfg:                       cfg,
 		settingService:            settingService,
+		captureService:            captureService,
 	}
 }
 
@@ -154,6 +157,15 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	setOpsRequestContext(c, "", false)
+
+	captureEnabled := h.captureService != nil && h.captureService.Enabled()
+	var captureAcc *service.CaptureAccumulator
+	if captureEnabled {
+		captureAcc = service.NewCaptureAccumulator(body, service.CloneHTTPHeaderForCapture(c.Request.Header), c.Request.Method, c.Request.URL.RequestURI(), h.captureService.MaxRecordBytes())
+		service.SetGinCaptureAccumulator(c, captureAcc)
+		ctx := service.WithCaptureAccumulator(c.Request.Context(), captureAcc)
+		c.Request = c.Request.WithContext(ctx)
+	}
 
 	bodyRef := service.NewRequestBodyRef(body)
 	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
@@ -931,6 +943,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			clientIP := ip.GetClientIP(c)
 			// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
 			requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
+			var captureSnapshot service.CaptureSnapshot
+			if captureAcc != nil {
+				captureAcc.SetClientDisconnect(result.ClientDisconnect)
+				captureSnapshot = captureAcc.Snapshot()
+			}
 			inboundEndpoint := GetInboundEndpoint(c)
 			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
@@ -966,6 +983,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
 					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					Capture:            captureSnapshot,
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),

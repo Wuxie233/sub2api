@@ -35,6 +35,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -1775,6 +1776,100 @@ func init() {
 	usagelogDescCreatedAt := usagelogFields[40].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
+	usagerequestcaptureFields := schema.UsageRequestCapture{}.Fields()
+	_ = usagerequestcaptureFields
+	// usagerequestcaptureDescRequestID is the schema descriptor for request_id field.
+	usagerequestcaptureDescRequestID := usagerequestcaptureFields[0].Descriptor()
+	// usagerequestcapture.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	usagerequestcapture.RequestIDValidator = func() func(string) error {
+		validators := usagerequestcaptureDescRequestID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(request_id string) error {
+			for _, fn := range fns {
+				if err := fn(request_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureDescProvider is the schema descriptor for provider field.
+	usagerequestcaptureDescProvider := usagerequestcaptureFields[5].Descriptor()
+	// usagerequestcapture.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	usagerequestcapture.ProviderValidator = func() func(string) error {
+		validators := usagerequestcaptureDescProvider.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider string) error {
+			for _, fn := range fns {
+				if err := fn(provider); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureDescModel is the schema descriptor for model field.
+	usagerequestcaptureDescModel := usagerequestcaptureFields[6].Descriptor()
+	// usagerequestcapture.ModelValidator is a validator for the "model" field. It is called by the builders before save.
+	usagerequestcapture.ModelValidator = func() func(string) error {
+		validators := usagerequestcaptureDescModel.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model string) error {
+			for _, fn := range fns {
+				if err := fn(model); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureDescEndpoint is the schema descriptor for endpoint field.
+	usagerequestcaptureDescEndpoint := usagerequestcaptureFields[7].Descriptor()
+	// usagerequestcapture.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
+	usagerequestcapture.EndpointValidator = func() func(string) error {
+		validators := usagerequestcaptureDescEndpoint.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(endpoint string) error {
+			for _, fn := range fns {
+				if err := fn(endpoint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureDescStream is the schema descriptor for stream field.
+	usagerequestcaptureDescStream := usagerequestcaptureFields[8].Descriptor()
+	// usagerequestcapture.DefaultStream holds the default value on creation for the stream field.
+	usagerequestcapture.DefaultStream = usagerequestcaptureDescStream.Default.(bool)
+	// usagerequestcaptureDescTruncated is the schema descriptor for truncated field.
+	usagerequestcaptureDescTruncated := usagerequestcaptureFields[14].Descriptor()
+	// usagerequestcapture.DefaultTruncated holds the default value on creation for the truncated field.
+	usagerequestcapture.DefaultTruncated = usagerequestcaptureDescTruncated.Default.(bool)
+	// usagerequestcaptureDescTruncateReason is the schema descriptor for truncate_reason field.
+	usagerequestcaptureDescTruncateReason := usagerequestcaptureFields[15].Descriptor()
+	// usagerequestcapture.TruncateReasonValidator is a validator for the "truncate_reason" field. It is called by the builders before save.
+	usagerequestcapture.TruncateReasonValidator = usagerequestcaptureDescTruncateReason.Validators[0].(func(string) error)
+	// usagerequestcaptureDescCaptureSchemaVersion is the schema descriptor for capture_schema_version field.
+	usagerequestcaptureDescCaptureSchemaVersion := usagerequestcaptureFields[16].Descriptor()
+	// usagerequestcapture.DefaultCaptureSchemaVersion holds the default value on creation for the capture_schema_version field.
+	usagerequestcapture.DefaultCaptureSchemaVersion = usagerequestcaptureDescCaptureSchemaVersion.Default.(int)
+	// usagerequestcaptureDescCreatedAt is the schema descriptor for created_at field.
+	usagerequestcaptureDescCreatedAt := usagerequestcaptureFields[18].Descriptor()
+	// usagerequestcapture.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usagerequestcapture.DefaultCreatedAt = usagerequestcaptureDescCreatedAt.Default.(func() time.Time)
 	userMixin := schema.User{}.Mixin()
 	userMixinHooks1 := userMixin[1].Hooks()
 	user.Hooks[0] = userMixinHooks1[0]

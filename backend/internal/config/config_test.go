@@ -742,6 +742,31 @@ func TestLoadDefaultUsageCleanupConfig(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultUsageCaptureConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !cfg.UsageCapture.Enabled {
+		t.Fatalf("UsageCapture.Enabled = false, want true")
+	}
+	if cfg.UsageCapture.RetentionDays != 30 {
+		t.Fatalf("UsageCapture.RetentionDays = %d, want 30", cfg.UsageCapture.RetentionDays)
+	}
+	if cfg.UsageCapture.MaxRecordBytes != 5000000 {
+		t.Fatalf("UsageCapture.MaxRecordBytes = %d, want 5000000", cfg.UsageCapture.MaxRecordBytes)
+	}
+	if cfg.UsageCapture.RetentionIntervalSeconds != 300 {
+		t.Fatalf("UsageCapture.RetentionIntervalSeconds = %d, want 300", cfg.UsageCapture.RetentionIntervalSeconds)
+	}
+	if cfg.UsageCapture.RetentionBatchSize != 2000 {
+		t.Fatalf("UsageCapture.RetentionBatchSize = %d, want 2000", cfg.UsageCapture.RetentionBatchSize)
+	}
+}
+
 func TestValidateUsageCleanupConfigEnabled(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
@@ -777,6 +802,44 @@ func TestValidateUsageCleanupConfigDisabled(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "usage_cleanup.batch_size") {
 		t.Fatalf("Validate() expected batch_size error, got: %v", err)
+	}
+}
+
+func TestValidateUsageCaptureConfigEnabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	cfg.UsageCapture.Enabled = true
+	cfg.UsageCapture.MaxRecordBytes = 0
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatalf("Validate() expected error for usage_capture.max_record_bytes, got nil")
+	}
+	if !strings.Contains(err.Error(), "usage_capture.max_record_bytes") {
+		t.Fatalf("Validate() expected max_record_bytes error, got: %v", err)
+	}
+}
+
+func TestValidateUsageCaptureConfigDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	cfg.UsageCapture.Enabled = false
+	cfg.UsageCapture.RetentionBatchSize = -1
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatalf("Validate() expected error for usage_capture.retention_batch_size, got nil")
+	}
+	if !strings.Contains(err.Error(), "usage_capture.retention_batch_size") {
+		t.Fatalf("Validate() expected retention_batch_size error, got: %v", err)
 	}
 }
 
@@ -1292,6 +1355,21 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "usage cleanup disabled negative",
 			mutate:  func(c *Config) { c.UsageCleanup.Enabled = false; c.UsageCleanup.BatchSize = -1 },
 			wantErr: "usage_cleanup.batch_size",
+		},
+		{
+			name:    "usage capture retention days",
+			mutate:  func(c *Config) { c.UsageCapture.Enabled = true; c.UsageCapture.RetentionDays = 0 },
+			wantErr: "usage_capture.retention_days",
+		},
+		{
+			name:    "usage capture retention interval",
+			mutate:  func(c *Config) { c.UsageCapture.Enabled = true; c.UsageCapture.RetentionIntervalSeconds = 0 },
+			wantErr: "usage_capture.retention_interval_seconds",
+		},
+		{
+			name:    "usage capture disabled negative",
+			mutate:  func(c *Config) { c.UsageCapture.Enabled = false; c.UsageCapture.MaxRecordBytes = -1 },
+			wantErr: "usage_capture.max_record_bytes",
 		},
 		{
 			name:    "gateway max body size",

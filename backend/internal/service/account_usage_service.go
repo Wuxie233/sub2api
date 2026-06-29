@@ -80,6 +80,13 @@ type UsageLogRepository interface {
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
 }
 
+type UsageRequestCaptureRepository interface {
+	CreateBestEffort(ctx context.Context, capture *UsageRequestCapture) error
+	GetByRequestID(ctx context.Context, requestID string, apiKeyID *int64) (*UsageRequestCapture, error)
+	ExistsByRequestID(ctx context.Context, requestID string, apiKeyID *int64) (bool, error)
+	DeleteExpired(ctx context.Context, before time.Time, batchSize int) (int, error)
+}
+
 type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }

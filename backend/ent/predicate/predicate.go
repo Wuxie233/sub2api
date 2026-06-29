@@ -93,6 +93,9 @@ type UsageCleanupTask func(*sql.Selector)
 // UsageLog is the predicate function for usagelog builders.
 type UsageLog func(*sql.Selector)
 
+// UsageRequestCapture is the predicate function for usagerequestcapture builders.
+type UsageRequestCapture func(*sql.Selector)
+
 // User is the predicate function for user builders.
 type User func(*sql.Selector)
 

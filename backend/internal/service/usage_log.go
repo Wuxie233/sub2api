@@ -96,6 +96,30 @@ func ApplyLegacyRequestFields(requestType RequestType, fallbackStream bool, fall
 	}
 }
 
+type UsageRequestCapture struct {
+	ID                   int64
+	RequestID            string
+	APIKeyID             *int64
+	UsageLogID           *int64
+	UserID               *int64
+	AccountID            *int64
+	Provider             string
+	Model                string
+	Endpoint             string
+	Stream               bool
+	StatusCode           int
+	DurationMs           int64
+	RequestBytes         int64
+	ResponseBytes        int64
+	CompressedBytes      int64
+	Truncated            bool
+	TruncateReason       *string
+	CaptureSchemaVersion int
+	PayloadGzip          []byte
+	CreatedAt            time.Time
+	ExpiresAt            *time.Time
+}
+
 type UsageLog struct {
 	ID        int64
 	UserID    int64

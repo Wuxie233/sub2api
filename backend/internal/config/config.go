@@ -86,6 +86,7 @@ type Config struct {
 	Dashboard               DashboardCacheConfig          `mapstructure:"dashboard_cache"`
 	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
 	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
+	UsageCapture            UsageCaptureConfig            `mapstructure:"usage_capture"`
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
 	Pulse                   PulseConfig                   `mapstructure:"pulse"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
@@ -1359,6 +1360,20 @@ type UsageCleanupConfig struct {
 	TaskTimeoutSeconds int `mapstructure:"task_timeout_seconds"`
 }
 
+// UsageCaptureConfig 请求/响应抓包配置
+type UsageCaptureConfig struct {
+	// Enabled: 是否启用请求/响应抓包
+	Enabled bool `mapstructure:"enabled"`
+	// RetentionDays: 抓包记录保留天数
+	RetentionDays int `mapstructure:"retention_days"`
+	// MaxRecordBytes: 单条抓包记录最大 JSON 字节数
+	MaxRecordBytes int `mapstructure:"max_record_bytes"`
+	// RetentionIntervalSeconds: 过期记录清理间隔（秒）
+	RetentionIntervalSeconds int `mapstructure:"retention_interval_seconds"`
+	// RetentionBatchSize: 单批清理数量
+	RetentionBatchSize int `mapstructure:"retention_batch_size"`
+}
+
 func NormalizeRunMode(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
@@ -1822,6 +1837,13 @@ func setDefaults() {
 	viper.SetDefault("usage_cleanup.batch_size", 5000)
 	viper.SetDefault("usage_cleanup.worker_interval_seconds", 10)
 	viper.SetDefault("usage_cleanup.task_timeout_seconds", 1800)
+
+	// Usage capture
+	viper.SetDefault("usage_capture.enabled", true)
+	viper.SetDefault("usage_capture.retention_days", 30)
+	viper.SetDefault("usage_capture.max_record_bytes", 5000000)
+	viper.SetDefault("usage_capture.retention_interval_seconds", 300)
+	viper.SetDefault("usage_capture.retention_batch_size", 2000)
 
 	// Idempotency
 	viper.SetDefault("idempotency.observe_only", true)
@@ -2441,6 +2463,33 @@ func (c *Config) Validate() error {
 		}
 		if c.UsageCleanup.TaskTimeoutSeconds < 0 {
 			return fmt.Errorf("usage_cleanup.task_timeout_seconds must be non-negative")
+		}
+	}
+	if c.UsageCapture.Enabled {
+		if c.UsageCapture.RetentionDays <= 0 {
+			return fmt.Errorf("usage_capture.retention_days must be positive")
+		}
+		if c.UsageCapture.MaxRecordBytes <= 0 {
+			return fmt.Errorf("usage_capture.max_record_bytes must be positive")
+		}
+		if c.UsageCapture.RetentionIntervalSeconds <= 0 {
+			return fmt.Errorf("usage_capture.retention_interval_seconds must be positive")
+		}
+		if c.UsageCapture.RetentionBatchSize <= 0 {
+			return fmt.Errorf("usage_capture.retention_batch_size must be positive")
+		}
+	} else {
+		if c.UsageCapture.RetentionDays < 0 {
+			return fmt.Errorf("usage_capture.retention_days must be non-negative")
+		}
+		if c.UsageCapture.MaxRecordBytes < 0 {
+			return fmt.Errorf("usage_capture.max_record_bytes must be non-negative")
+		}
+		if c.UsageCapture.RetentionIntervalSeconds < 0 {
+			return fmt.Errorf("usage_capture.retention_interval_seconds must be non-negative")
+		}
+		if c.UsageCapture.RetentionBatchSize < 0 {
+			return fmt.Errorf("usage_capture.retention_batch_size must be non-negative")
 		}
 	}
 	if c.Idempotency.DefaultTTLSeconds <= 0 {

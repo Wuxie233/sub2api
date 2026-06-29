@@ -742,6 +742,27 @@ usage_cleanup:
   task_timeout_seconds: 1800
 
 # =============================================================================
+# Usage Capture Configuration
+# 请求/响应抓包配置（重启生效）
+# =============================================================================
+usage_capture:
+  # Enable request/response capture persistence
+  # 启用请求/响应抓包持久化
+  enabled: true
+  # Retention window in days
+  # 抓包记录保留天数
+  retention_days: 30
+  # Max marshaled trace record size in bytes
+  # 单条抓包 JSON 记录最大字节数
+  max_record_bytes: 5000000
+  # Expired capture cleanup interval (seconds)
+  # 过期抓包清理间隔（秒）
+  retention_interval_seconds: 300
+  # Max expired captures deleted per batch
+  # 每批最多清理的过期抓包数
+  retention_batch_size: 2000
+
+# =============================================================================
 # HTTP 写接口幂等配置
 # Idempotency Configuration
 # =============================================================================

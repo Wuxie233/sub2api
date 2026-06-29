@@ -45,6 +45,7 @@ func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo 
 		nil,
 		nil,
 		nil, // userPlatformQuotaRepo
+		nil, // captureService
 	)
 }
 
@@ -490,4 +491,122 @@ func TestGatewayServiceRecordUsage_ReasoningEffortNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Nil(t, usageRepo.lastLog.ReasoningEffort)
+}
+
+func TestGatewayServiceRecordUsage_CapturesNativeAnthropicAfterBilling(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	captureRepo := &usageCaptureFakeRepo{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.captureService = NewUsageCaptureService(captureRepo, usageCaptureTestConfig(true, 7, 1_000_000))
+
+	apiKeyID := int64(901)
+	requestBody := []byte(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hi"}]}`)
+	responseBody := []byte(`{"id":"msg_1","type":"message","usage":{"input_tokens":10,"output_tokens":6}}`)
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "client-capture")
+
+	err := svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "upstream-capture",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Stream:   false,
+			Duration: 1234 * time.Millisecond,
+		},
+		APIKey:          &APIKey{ID: apiKeyID, Quota: 100},
+		User:            &User{ID: 902, Balance: 100},
+		Account:         &Account{ID: 903},
+		InboundEndpoint: "/v1/messages",
+		Capture: CaptureSnapshot{
+			RequestBody:     requestBody,
+			RequestHeaders:  map[string]string{"Content-Type": "application/json"},
+			Method:          "POST",
+			Path:            "/v1/messages?beta=true",
+			ResponseBody:    responseBody,
+			StatusCode:      200,
+			ResponseHeaders: map[string]string{"Content-Type": "application/json"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Len(t, captureRepo.captures, 1)
+	record, capture, err := svc.captureService.Get(context.Background(), "client:client-capture", &apiKeyID)
+	require.NoError(t, err)
+	require.Equal(t, "client:client-capture", record.RequestID)
+	require.Equal(t, int64(1234), record.DurationMs)
+	require.Equal(t, "POST", record.Request.Method)
+	require.Equal(t, "/v1/messages?beta=true", record.Request.Path)
+	require.JSONEq(t, string(requestBody), string(record.Request.Body))
+	require.JSONEq(t, string(responseBody), string(record.Response.Body))
+	require.Equal(t, "/v1/messages", capture.Endpoint)
+	require.Equal(t, PlatformAnthropic, capture.Provider)
+	require.False(t, capture.Truncated)
+}
+
+func TestGatewayServiceRecordUsage_CaptureBestEffortErrorDoesNotFailBilling(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	captureRepo := &usageCaptureFakeRepo{createErr: errors.New("capture insert failed")}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.captureService = NewUsageCaptureService(captureRepo, usageCaptureTestConfig(true, 7, 1_000_000))
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "capture_best_effort_failure",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 904, Quota: 100},
+		User:    &User{ID: 905, Balance: 100},
+		Account: &Account{ID: 906},
+		Capture: CaptureSnapshot{
+			RequestBody:  []byte(`{"model":"claude-sonnet-4"}`),
+			Method:       "POST",
+			Path:         "/v1/messages",
+			ResponseBody: []byte(`{"usage":{"input_tokens":10,"output_tokens":6}}`),
+			StatusCode:   200,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, captureRepo.createCalled)
+}
+
+func TestGatewayServiceRecordUsage_CaptureDisabledSkipsCapture(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	captureRepo := &usageCaptureFakeRepo{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	// Capture service present but DISABLED via config.
+	svc.captureService = NewUsageCaptureService(captureRepo, usageCaptureTestConfig(false, 7, 1_000_000))
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "capture_disabled",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 910, Quota: 100},
+		User:    &User{ID: 911, Balance: 100},
+		Account: &Account{ID: 912},
+		Capture: CaptureSnapshot{
+			RequestBody:  []byte(`{"model":"claude-sonnet-4"}`),
+			Method:       "POST",
+			Path:         "/v1/messages",
+			ResponseBody: []byte(`{"usage":{"input_tokens":10,"output_tokens":6}}`),
+			StatusCode:   200,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, captureRepo.createCalled)
+	require.Empty(t, captureRepo.captures)
 }

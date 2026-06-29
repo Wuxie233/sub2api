@@ -44,6 +44,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -117,6 +118,8 @@ type Client struct {
 	UsageCleanupTask *UsageCleanupTaskClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
+	// UsageRequestCapture is the client for interacting with the UsageRequestCapture builders.
+	UsageRequestCapture *UsageRequestCaptureClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserAllowedGroup is the client for interacting with the UserAllowedGroup builders.
@@ -169,6 +172,7 @@ func (c *Client) init() {
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
+	c.UsageRequestCapture = NewUsageRequestCaptureClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserAllowedGroup = NewUserAllowedGroupClient(c.config)
 	c.UserAttributeDefinition = NewUserAttributeDefinitionClient(c.config)
@@ -296,6 +300,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
+		UsageRequestCapture:           NewUsageRequestCaptureClient(cfg),
 		User:                          NewUserClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
@@ -350,6 +355,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
+		UsageRequestCapture:           NewUsageRequestCaptureClient(cfg),
 		User:                          NewUserClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
@@ -393,8 +399,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.UsageRequestCapture, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -412,8 +418,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.UsageRequestCapture, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -480,6 +486,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UsageCleanupTask.mutate(ctx, m)
 	case *UsageLogMutation:
 		return c.UsageLog.mutate(ctx, m)
+	case *UsageRequestCaptureMutation:
+		return c.UsageRequestCapture.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	case *UserAllowedGroupMutation:
@@ -5065,6 +5073,139 @@ func (c *UsageLogClient) mutate(ctx context.Context, m *UsageLogMutation) (Value
 	}
 }
 
+// UsageRequestCaptureClient is a client for the UsageRequestCapture schema.
+type UsageRequestCaptureClient struct {
+	config
+}
+
+// NewUsageRequestCaptureClient returns a client for the UsageRequestCapture from the given config.
+func NewUsageRequestCaptureClient(c config) *UsageRequestCaptureClient {
+	return &UsageRequestCaptureClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `usagerequestcapture.Hooks(f(g(h())))`.
+func (c *UsageRequestCaptureClient) Use(hooks ...Hook) {
+	c.hooks.UsageRequestCapture = append(c.hooks.UsageRequestCapture, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `usagerequestcapture.Intercept(f(g(h())))`.
+func (c *UsageRequestCaptureClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UsageRequestCapture = append(c.inters.UsageRequestCapture, interceptors...)
+}
+
+// Create returns a builder for creating a UsageRequestCapture entity.
+func (c *UsageRequestCaptureClient) Create() *UsageRequestCaptureCreate {
+	mutation := newUsageRequestCaptureMutation(c.config, OpCreate)
+	return &UsageRequestCaptureCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UsageRequestCapture entities.
+func (c *UsageRequestCaptureClient) CreateBulk(builders ...*UsageRequestCaptureCreate) *UsageRequestCaptureCreateBulk {
+	return &UsageRequestCaptureCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UsageRequestCaptureClient) MapCreateBulk(slice any, setFunc func(*UsageRequestCaptureCreate, int)) *UsageRequestCaptureCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UsageRequestCaptureCreateBulk{err: fmt.Errorf("calling to UsageRequestCaptureClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UsageRequestCaptureCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UsageRequestCaptureCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UsageRequestCapture.
+func (c *UsageRequestCaptureClient) Update() *UsageRequestCaptureUpdate {
+	mutation := newUsageRequestCaptureMutation(c.config, OpUpdate)
+	return &UsageRequestCaptureUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UsageRequestCaptureClient) UpdateOne(_m *UsageRequestCapture) *UsageRequestCaptureUpdateOne {
+	mutation := newUsageRequestCaptureMutation(c.config, OpUpdateOne, withUsageRequestCapture(_m))
+	return &UsageRequestCaptureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UsageRequestCaptureClient) UpdateOneID(id int64) *UsageRequestCaptureUpdateOne {
+	mutation := newUsageRequestCaptureMutation(c.config, OpUpdateOne, withUsageRequestCaptureID(id))
+	return &UsageRequestCaptureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UsageRequestCapture.
+func (c *UsageRequestCaptureClient) Delete() *UsageRequestCaptureDelete {
+	mutation := newUsageRequestCaptureMutation(c.config, OpDelete)
+	return &UsageRequestCaptureDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UsageRequestCaptureClient) DeleteOne(_m *UsageRequestCapture) *UsageRequestCaptureDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UsageRequestCaptureClient) DeleteOneID(id int64) *UsageRequestCaptureDeleteOne {
+	builder := c.Delete().Where(usagerequestcapture.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UsageRequestCaptureDeleteOne{builder}
+}
+
+// Query returns a query builder for UsageRequestCapture.
+func (c *UsageRequestCaptureClient) Query() *UsageRequestCaptureQuery {
+	return &UsageRequestCaptureQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUsageRequestCapture},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UsageRequestCapture entity by its id.
+func (c *UsageRequestCaptureClient) Get(ctx context.Context, id int64) (*UsageRequestCapture, error) {
+	return c.Query().Where(usagerequestcapture.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UsageRequestCaptureClient) GetX(ctx context.Context, id int64) *UsageRequestCapture {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UsageRequestCaptureClient) Hooks() []Hook {
+	return c.hooks.UsageRequestCapture
+}
+
+// Interceptors returns the client interceptors.
+func (c *UsageRequestCaptureClient) Interceptors() []Interceptor {
+	return c.inters.UsageRequestCapture
+}
+
+func (c *UsageRequestCaptureClient) mutate(ctx context.Context, m *UsageRequestCaptureMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UsageRequestCaptureCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UsageRequestCaptureUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UsageRequestCaptureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UsageRequestCaptureDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UsageRequestCapture mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -6215,9 +6356,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6226,9 +6367,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 
