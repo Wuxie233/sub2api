@@ -7154,7 +7154,7 @@ func dropInvalidPlaceholderToolsInOpenAIBody(body []byte) ([]byte, bool, error) 
 	if len(body) == 0 {
 		return body, false, nil
 	}
-	if gjson.ValidBytes(body) && !openAIRequestBodyHasInvalidPlaceholderTools(body) {
+	if gjson.ValidBytes(body) && !openAIRequestBodyHasInvalidPlaceholderTools(body) && !bytes.Contains(body, []byte(`\u`)) {
 		return body, false, nil
 	}
 	if !gjson.ValidBytes(body) && !bytes.Contains(body, []byte(`"tools"`)) {

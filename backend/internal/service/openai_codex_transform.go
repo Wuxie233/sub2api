@@ -1325,10 +1325,9 @@ func isInvalidCodexToolPlaceholderType(toolType string) bool {
 	}
 }
 
-// dropInvalidPlaceholderTools strips tools entries with an invalid placeholder
-// type ("", "None", "null") that the upstream OpenAI Responses API rejects with
-// `Unsupported tool type: None`. Safe to call on any reqBody regardless of
-// account type; returns true when at least one entry was dropped.
+// dropInvalidPlaceholderTools normalizes OpenAI Responses tool definitions from
+// older Codex-style payloads. Missing or empty type on a named tool means a
+// function tool; explicit None/null placeholders are discarded.
 func dropInvalidPlaceholderTools(reqBody map[string]any) bool {
 	rawTools, ok := reqBody["tools"]
 	if !ok || rawTools == nil {
@@ -1339,21 +1338,34 @@ func dropInvalidPlaceholderTools(reqBody map[string]any) bool {
 		return false
 	}
 	filtered := make([]any, 0, len(tools))
-	dropped := false
+	changed := false
 	for _, tool := range tools {
 		toolMap, ok := tool.(map[string]any)
 		if !ok {
 			filtered = append(filtered, tool)
 			continue
 		}
-		toolType, _ := toolMap["type"].(string)
-		if isInvalidCodexToolPlaceholderType(toolType) {
-			dropped = true
+		rawType, hasType := toolMap["type"]
+		toolType, typeIsString := rawType.(string)
+		trimmedType := strings.TrimSpace(toolType)
+		if !hasType || (typeIsString && trimmedType == "") {
+			name, _ := toolMap["name"].(string)
+			if strings.TrimSpace(name) == "" {
+				changed = true
+				continue
+			}
+			toolMap["type"] = "function"
+			changed = true
+			filtered = append(filtered, toolMap)
+			continue
+		}
+		if !typeIsString || isInvalidCodexToolPlaceholderType(toolType) {
+			changed = true
 			continue
 		}
 		filtered = append(filtered, tool)
 	}
-	if !dropped {
+	if !changed {
 		return false
 	}
 	reqBody["tools"] = filtered

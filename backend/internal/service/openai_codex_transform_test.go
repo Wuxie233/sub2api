@@ -553,6 +553,7 @@ func TestDropInvalidPlaceholderTools_RemovesPlaceholderTypesAcrossAccountTypes(t
 		"tools": []any{
 			map[string]any{"type": "function", "name": "shell", "parameters": map[string]any{"type": "object"}},
 			map[string]any{"name": "missing_type", "parameters": map[string]any{"type": "object"}},
+			map[string]any{"type": "", "name": "blank_type"},
 			map[string]any{"type": nil, "name": "nil_type"},
 			map[string]any{"type": "None"},
 			map[string]any{"type": "image_generation"},
@@ -563,14 +564,20 @@ func TestDropInvalidPlaceholderTools_RemovesPlaceholderTypesAcrossAccountTypes(t
 
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
-	require.Len(t, tools, 2)
+	require.Len(t, tools, 4)
 
 	first, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "function", first["type"])
 	second, ok := tools[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "image_generation", second["type"])
+	require.Equal(t, "function", second["type"])
+	third, ok := tools[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function", third["type"])
+	fourth, ok := tools[3].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image_generation", fourth["type"])
 }
 
 func TestDropInvalidPlaceholderTools_NoopWhenAllValid(t *testing.T) {
@@ -616,7 +623,7 @@ func TestDropInvalidPlaceholderTools_PreservesToolChoiceForSurvivingTool(t *test
 }
 
 func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsBadTypesAndReserializes(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"function","name":"shell"},{"name":"missing"},{"type":"None"},{"type":"null"},{"type":"web_search"}]}`)
+	body := []byte(`{"model":"gpt-5.5","tools":[{"type":"function","name":"shell"},{"name":"missing"},{"type":""},{"type":"None"},{"type":"null"},{"type":"web_search"}]}`)
 
 	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
 	require.NoError(t, err)
@@ -626,13 +633,16 @@ func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsBadTypesAndReserializes(t
 	require.NoError(t, json.Unmarshal(out, &parsed))
 	tools, ok := parsed["tools"].([]any)
 	require.True(t, ok)
-	require.Len(t, tools, 2)
+	require.Len(t, tools, 3)
 	first, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "function", first["type"])
 	second, ok := tools[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "web_search", second["type"])
+	require.Equal(t, "function", second["type"])
+	third, ok := tools[2].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "web_search", third["type"])
 }
 
 func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsEscapedToolsKey(t *testing.T) {
@@ -642,6 +652,16 @@ func TestDropInvalidPlaceholderToolsInOpenAIBody_StripsEscapedToolsKey(t *testin
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(out, `tools.#(type=="None")`).Exists())
+	require.Equal(t, "shell", gjson.GetBytes(out, "tools.0.name").String())
+}
+
+func TestDropInvalidPlaceholderToolsInOpenAIBody_NormalizesEscapedToolsKey(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","to` + "\\u006f" + `ls":[{"name":"shell","parameters":{"type":"object"}}]}`)
+
+	out, changed, err := dropInvalidPlaceholderToolsInOpenAIBody(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "function", gjson.GetBytes(out, "tools.0.type").String())
 	require.Equal(t, "shell", gjson.GetBytes(out, "tools.0.name").String())
 }
 
