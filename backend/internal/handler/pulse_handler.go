@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/web/pulse"
 	"github.com/gin-gonic/gin"
@@ -34,7 +36,9 @@ func (h *PulseHandler) ServePage(c *gin.Context) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", pulse.DashboardHTML)
+	nonce := middleware.GetNonceFromContext(c)
+	html := bytes.ReplaceAll(pulse.DashboardHTML, []byte(pulse.NoncePlaceholder), []byte(nonce))
+	c.Data(http.StatusOK, "text/html; charset=utf-8", html)
 }
 
 func (h *PulseHandler) ServeUsage(c *gin.Context) {
