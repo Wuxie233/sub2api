@@ -985,6 +985,7 @@ export default {
     preview: '预览',
     previewUnavailable: '捕获记录不可用或已过期',
     previewFailed: '打开会话预览失败',
+    previewTitle: '对话预览',
     tabs: { usage: '用量明细', errors: '错误请求' },
     errors: {
       time: '时间', model: '模型', endpoint: '端点', status: '状态码',

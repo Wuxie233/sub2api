@@ -149,6 +149,23 @@
     :hide-actions="true"
     @close="showBalanceHistoryModal = false; balanceHistoryUser = null"
   />
+  <!-- Capture conversation preview: in-app blob iframe modal (mobile-safe; top-level blob nav is blocked on mobile) -->
+  <BaseDialog
+    :show="previewOpen"
+    :title="previewModalTitle"
+    width="full"
+    :close-on-click-outside="true"
+    @close="closeCapturePreview"
+  >
+    <div class="h-[calc(95vh_-_7rem)] sm:h-[calc(90vh_-_7rem)]">
+      <iframe
+        v-if="previewUrl"
+        :src="previewUrl"
+        :title="t('usage.previewTitle')"
+        class="h-full w-full border-0"
+      ></iframe>
+    </div>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
@@ -165,6 +182,7 @@ import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; impo
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
 import OpsErrorDetailModal from '@/views/admin/ops/components/OpsErrorDetailModal.vue'
 import { listErrorLogs } from '@/api/admin/ops'
@@ -232,8 +250,16 @@ const handleUserClick = async (userId: number) => {
 }
 
 // Per-row capture preview: fetch the self-contained HTML via authenticated apiClient
-// (JWT Bearer header, no token in URL) and open it in a new tab as a blob URL.
+// (JWT Bearer header, no token in URL) and render it in an in-app iframe modal. Mobile
+// browsers block top-level navigation to blob: URLs, but a blob-backed <iframe> renders
+// fine (backend CSP allows frame-src 'self' blob:).
 const previewingRequestId = ref<string | null>(null)
+const previewOpen = ref(false)
+const previewUrl = ref('')
+const previewTitle = ref('')
+const previewModalTitle = computed(() =>
+  previewTitle.value ? `${t('usage.previewTitle')} - ${previewTitle.value}` : t('usage.previewTitle')
+)
 const openCapturePreview = async (row: AdminUsageLog) => {
   if (previewingRequestId.value === row.request_id) return
   if (!row.request_id) {
@@ -243,10 +269,10 @@ const openCapturePreview = async (row: AdminUsageLog) => {
   previewingRequestId.value = row.request_id
   try {
     const blob = await adminUsageAPI.previewCapture(row.request_id, row.api_key_id)
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener')
-    // Revoke after a delay so the new tab has time to load the document.
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = URL.createObjectURL(blob)
+    previewTitle.value = row.model || row.request_id
+    previewOpen.value = true
   } catch (error: any) {
     if (error?.status === 404) {
       appStore.showWarning(t('usage.previewUnavailable'))
@@ -256,6 +282,12 @@ const openCapturePreview = async (row: AdminUsageLog) => {
   } finally {
     previewingRequestId.value = null
   }
+}
+const closeCapturePreview = () => {
+  previewOpen.value = false
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  previewTitle.value = ''
 }
 
 const granularityOptions = computed(() => [{ value: 'day', label: t('admin.dashboard.day') }, { value: 'hour', label: t('admin.dashboard.hour') }])
@@ -717,7 +749,7 @@ onMounted(() => {
   loadSavedColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside); if (previewUrl.value) URL.revokeObjectURL(previewUrl.value) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)

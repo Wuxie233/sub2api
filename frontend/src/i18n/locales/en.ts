@@ -981,6 +981,7 @@ export default {
     preview: 'Preview',
     previewUnavailable: 'Capture record is unavailable or has expired',
     previewFailed: 'Failed to open conversation preview',
+    previewTitle: 'Conversation Preview',
     tabs: { usage: 'Usage', errors: 'Error Requests' },
     errors: {
       time: 'Time', model: 'Model', endpoint: 'Endpoint', status: 'Status',
