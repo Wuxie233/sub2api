@@ -200,6 +200,21 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
   return data
 }
 
+/**
+ * Preview a captured conversation as self-contained HTML (admin only).
+ * Authenticated via apiClient (JWT Bearer header); no token is placed in the URL.
+ * @param requestId - The usage log request_id whose capture to preview
+ * @param apiKeyId - Optional API key id that owns the capture
+ * @returns Blob containing a self-contained HTML document
+ */
+export async function previewCapture(requestId: string, apiKeyId?: number): Promise<Blob> {
+  const { data } = await apiClient.get<Blob>('/admin/usage/captures/preview', {
+    params: { request_id: requestId, api_key_id: apiKeyId },
+    responseType: 'blob'
+  })
+  return data
+}
+
 export const adminUsageAPI = {
   list,
   getStats,
@@ -207,7 +222,8 @@ export const adminUsageAPI = {
   searchApiKeys,
   listCleanupTasks,
   createCleanupTask,
-  cancelCleanupTask
+  cancelCleanupTask,
+  previewCapture
 }
 
 export default adminUsageAPI

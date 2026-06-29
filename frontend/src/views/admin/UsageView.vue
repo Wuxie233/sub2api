@@ -116,8 +116,10 @@
           :server-side-sort="true"
           :default-sort-key="'created_at'"
           :default-sort-order="'desc'"
+          :previewing-request-id="previewingRequestId"
           @sort="handleSort"
           @userClick="handleUserClick"
+          @preview="openCapturePreview"
         />
         <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
       </div>
@@ -226,6 +228,33 @@ const handleUserClick = async (userId: number) => {
     showBalanceHistoryModal.value = true
   } catch {
     appStore.showError(t('admin.usage.failedToLoadUser'))
+  }
+}
+
+// Per-row capture preview: fetch the self-contained HTML via authenticated apiClient
+// (JWT Bearer header, no token in URL) and open it in a new tab as a blob URL.
+const previewingRequestId = ref<string | null>(null)
+const openCapturePreview = async (row: AdminUsageLog) => {
+  if (previewingRequestId.value === row.request_id) return
+  if (!row.request_id) {
+    appStore.showWarning(t('usage.previewUnavailable'))
+    return
+  }
+  previewingRequestId.value = row.request_id
+  try {
+    const blob = await adminUsageAPI.previewCapture(row.request_id, row.api_key_id)
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+    // Revoke after a delay so the new tab has time to load the document.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (error: any) {
+    if (error?.status === 404) {
+      appStore.showWarning(t('usage.previewUnavailable'))
+    } else {
+      appStore.showError(t('usage.previewFailed'))
+    }
+  } finally {
+    previewingRequestId.value = null
   }
 }
 
@@ -554,7 +583,7 @@ const exportToExcel = async () => {
 }
 
 // Column visibility
-const ALWAYS_VISIBLE = ['user', 'created_at']
+const ALWAYS_VISIBLE = ['user', 'created_at', 'actions']
 const DEFAULT_HIDDEN_COLUMNS = ['reasoning_effort', 'user_agent']
 const HIDDEN_COLUMNS_KEY = 'usage-hidden-columns'
 
@@ -574,7 +603,8 @@ const allColumns = computed(() => [
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
   { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
-  { key: 'ip_address', label: t('admin.usage.ipAddress'), sortable: false }
+  { key: 'ip_address', label: t('admin.usage.ipAddress'), sortable: false },
+  { key: 'actions', label: t('usage.actions'), sortable: false }
 ])
 
 const hiddenColumns = reactive<Set<string>>(new Set())

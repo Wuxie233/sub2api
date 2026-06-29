@@ -977,6 +977,10 @@ export default {
     exportExcelFailed: 'Failed to export usage data',
     imageUnit: ' images',
     userAgent: 'User-Agent',
+    actions: 'Actions',
+    preview: 'Preview',
+    previewUnavailable: 'Capture record is unavailable or has expired',
+    previewFailed: 'Failed to open conversation preview',
     tabs: { usage: 'Usage', errors: 'Error Requests' },
     errors: {
       time: 'Time', model: 'Model', endpoint: 'Endpoint', status: 'Status',
