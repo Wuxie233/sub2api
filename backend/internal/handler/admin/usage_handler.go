@@ -3,10 +3,12 @@ package admin
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -26,6 +28,7 @@ type UsageHandler struct {
 	adminService        service.AdminService
 	cleanupService      *service.UsageCleanupService
 	usageCaptureService *service.UsageCaptureService
+	previewSigner       *service.UsageCapturePreviewSigner
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -35,14 +38,39 @@ func NewUsageHandler(
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
 	usageCaptureService *service.UsageCaptureService,
+	cfg *config.Config,
 ) *UsageHandler {
+	secret := ""
+	if cfg != nil {
+		secret = cfg.JWT.Secret
+	}
 	return &UsageHandler{
 		usageService:        usageService,
 		apiKeyService:       apiKeyService,
 		adminService:        adminService,
 		cleanupService:      cleanupService,
 		usageCaptureService: usageCaptureService,
+		previewSigner:       service.NewUsageCapturePreviewSigner(secret),
 	}
+}
+
+func (h *UsageHandler) usageCapturePreviewURL(requestID string, apiKeyID *int64, now time.Time) (string, error) {
+	if h == nil || h.previewSigner == nil {
+		return "", service.ErrUsageRequestCaptureNotFound
+	}
+	expiresAt := now.Add(service.UsageCapturePreviewTokenTTL)
+	token := h.previewSigner.Sign(service.UsageCapturePreviewClaims{
+		RequestID: requestID,
+		APIKeyID:  apiKeyID,
+		ExpiresAt: expiresAt,
+	})
+	values := url.Values{}
+	values.Set("request_id", requestID)
+	if apiKeyID != nil {
+		values.Set("api_key_id", strconv.FormatInt(*apiKeyID, 10))
+	}
+	values.Set("token", token)
+	return "/usage-capture-view?" + values.Encode(), nil
 }
 
 // CreateUsageCleanupTaskRequest represents cleanup task creation request

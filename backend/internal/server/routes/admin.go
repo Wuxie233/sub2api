@@ -579,6 +579,7 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		usage.POST("/cleanup-tasks", h.Admin.Usage.CreateCleanupTask)
 		usage.POST("/cleanup-tasks/:id/cancel", h.Admin.Usage.CancelCleanupTask)
 		usage.GET("/captures/preview", h.Admin.Usage.PreviewCapture)
+		usage.GET("/captures/preview-link", h.Admin.Usage.PreviewCaptureLink)
 	}
 }
 

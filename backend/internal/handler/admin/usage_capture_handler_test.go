@@ -2,8 +2,10 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+const usageCaptureTestJWTSecret = "test-jwt-secret-32-byte-minimum-value"
 
 // fakeUsageCaptureRepo is an in-memory service.UsageRequestCaptureRepository used
 // to back a real *service.UsageCaptureService in handler tests.
@@ -80,7 +84,7 @@ func TestUsageHandlerPreviewCapture(t *testing.T) {
 		ResponseBody: []byte(`{"content":[{"type":"text","text":"hello"}]}`),
 	}))
 
-	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc)
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview", handler.PreviewCapture)
 
@@ -135,7 +139,7 @@ func TestUsageHandlerPreviewCapture(t *testing.T) {
 func TestUsageHandlerPreviewCaptureServiceUnavailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	handler := NewUsageHandler(nil, nil, nil, nil, nil)
+	handler := NewUsageHandler(nil, nil, nil, nil, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview", handler.PreviewCapture)
 
@@ -144,4 +148,65 @@ func TestUsageHandlerPreviewCaptureServiceUnavailable(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestUsageHandlerPreviewCaptureLink(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const requestID = "req_preview_link_1"
+	apiKeyID := int64(9)
+	captureSvc := newUsageCaptureTestService(t, requestID, &apiKeyID)
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	router := gin.New()
+	router.GET("/admin/usage/captures/preview-link", handler.PreviewCaptureLink)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage/captures/preview-link?request_id="+requestID+"&api_key_id=9", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		URL string `json:"url"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, strings.HasPrefix(body.URL, "/usage-capture-view?"))
+	require.Contains(t, body.URL, "request_id="+requestID)
+	require.Contains(t, body.URL, "api_key_id=9")
+	require.Contains(t, body.URL, "token=")
+}
+
+func TestUsageHandlerPreviewCaptureLinkNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	captureSvc := newUsageCaptureTestService(t, "req_exists", nil)
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	router := gin.New()
+	router.GET("/admin/usage/captures/preview-link", handler.PreviewCaptureLink)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage/captures/preview-link?request_id=missing", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func newUsageCaptureTestService(t *testing.T, requestID string, apiKeyID *int64) *service.UsageCaptureService {
+	t.Helper()
+	repo := &fakeUsageCaptureRepo{}
+	cfg := &config.Config{UsageCapture: config.UsageCaptureConfig{
+		Enabled:        true,
+		RetentionDays:  7,
+		MaxRecordBytes: 1_000_000,
+	}}
+	captureSvc := service.NewUsageCaptureService(repo, cfg)
+	require.NoError(t, captureSvc.Capture(context.Background(), service.CaptureInput{
+		RequestID:    requestID,
+		APIKeyID:     apiKeyID,
+		Method:       "POST",
+		Path:         "/v1/messages",
+		StatusCode:   200,
+		RequestBody:  []byte(`{"model":"claude","messages":[{"role":"user","content":"hi"}]}`),
+		ResponseBody: []byte(`{"content":[{"type":"text","text":"hello"}]}`),
+	}))
+	return captureSvc
 }
