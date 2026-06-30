@@ -28,6 +28,7 @@ type UsageHandler struct {
 	adminService        service.AdminService
 	cleanupService      *service.UsageCleanupService
 	usageCaptureService *service.UsageCaptureService
+	shareService        *service.UsageCaptureShareService
 	previewSigner       *service.UsageCapturePreviewSigner
 }
 
@@ -38,6 +39,7 @@ func NewUsageHandler(
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
 	usageCaptureService *service.UsageCaptureService,
+	shareService *service.UsageCaptureShareService,
 	cfg *config.Config,
 ) *UsageHandler {
 	secret := ""
@@ -50,6 +52,7 @@ func NewUsageHandler(
 		adminService:        adminService,
 		cleanupService:      cleanupService,
 		usageCaptureService: usageCaptureService,
+		shareService:        shareService,
 		previewSigner:       service.NewUsageCapturePreviewSigner(secret),
 	}
 }

@@ -42,6 +42,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcaptureshare"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -138,6 +139,7 @@ func checkColumn(t, c string) error {
 			usagecleanuptask.Table:              usagecleanuptask.ValidColumn,
 			usagelog.Table:                      usagelog.ValidColumn,
 			usagerequestcapture.Table:           usagerequestcapture.ValidColumn,
+			usagerequestcaptureshare.Table:      usagerequestcaptureshare.ValidColumn,
 			user.Table:                          user.ValidColumn,
 			userallowedgroup.Table:              userallowedgroup.ValidColumn,
 			userattributedefinition.Table:       userattributedefinition.ValidColumn,

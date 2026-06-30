@@ -624,6 +624,7 @@ var ProviderSet = wire.NewSet(
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
 	NewUsageCaptureService,
+	NewUsageCaptureShareService,
 	ProvideUsageCaptureRetentionService,
 	ProvideUsageCleanupService,
 	ProvideDeferredService,

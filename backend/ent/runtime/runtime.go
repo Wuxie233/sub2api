@@ -36,6 +36,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcaptureshare"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -1870,6 +1871,56 @@ func init() {
 	usagerequestcaptureDescCreatedAt := usagerequestcaptureFields[18].Descriptor()
 	// usagerequestcapture.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagerequestcapture.DefaultCreatedAt = usagerequestcaptureDescCreatedAt.Default.(func() time.Time)
+	usagerequestcaptureshareFields := schema.UsageRequestCaptureShare{}.Fields()
+	_ = usagerequestcaptureshareFields
+	// usagerequestcaptureshareDescShareID is the schema descriptor for share_id field.
+	usagerequestcaptureshareDescShareID := usagerequestcaptureshareFields[0].Descriptor()
+	// usagerequestcaptureshare.ShareIDValidator is a validator for the "share_id" field. It is called by the builders before save.
+	usagerequestcaptureshare.ShareIDValidator = func() func(string) error {
+		validators := usagerequestcaptureshareDescShareID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(share_id string) error {
+			for _, fn := range fns {
+				if err := fn(share_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureshareDescRequestID is the schema descriptor for request_id field.
+	usagerequestcaptureshareDescRequestID := usagerequestcaptureshareFields[1].Descriptor()
+	// usagerequestcaptureshare.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	usagerequestcaptureshare.RequestIDValidator = func() func(string) error {
+		validators := usagerequestcaptureshareDescRequestID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(request_id string) error {
+			for _, fn := range fns {
+				if err := fn(request_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// usagerequestcaptureshareDescLabel is the schema descriptor for label field.
+	usagerequestcaptureshareDescLabel := usagerequestcaptureshareFields[4].Descriptor()
+	// usagerequestcaptureshare.LabelValidator is a validator for the "label" field. It is called by the builders before save.
+	usagerequestcaptureshare.LabelValidator = usagerequestcaptureshareDescLabel.Validators[0].(func(string) error)
+	// usagerequestcaptureshareDescViewCount is the schema descriptor for view_count field.
+	usagerequestcaptureshareDescViewCount := usagerequestcaptureshareFields[7].Descriptor()
+	// usagerequestcaptureshare.DefaultViewCount holds the default value on creation for the view_count field.
+	usagerequestcaptureshare.DefaultViewCount = usagerequestcaptureshareDescViewCount.Default.(int)
+	// usagerequestcaptureshareDescCreatedAt is the schema descriptor for created_at field.
+	usagerequestcaptureshareDescCreatedAt := usagerequestcaptureshareFields[9].Descriptor()
+	// usagerequestcaptureshare.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usagerequestcaptureshare.DefaultCreatedAt = usagerequestcaptureshareDescCreatedAt.Default.(func() time.Time)
 	userMixin := schema.User{}.Mixin()
 	userMixinHooks1 := userMixin[1].Hooks()
 	user.Hooks[0] = userMixinHooks1[0]

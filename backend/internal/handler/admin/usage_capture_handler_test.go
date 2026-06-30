@@ -1,15 +1,18 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -17,8 +20,6 @@ import (
 
 const usageCaptureTestJWTSecret = "test-jwt-secret-32-byte-minimum-value"
 
-// fakeUsageCaptureRepo is an in-memory service.UsageRequestCaptureRepository used
-// to back a real *service.UsageCaptureService in handler tests.
 type fakeUsageCaptureRepo struct {
 	captures []*service.UsageRequestCapture
 }
@@ -84,7 +85,7 @@ func TestUsageHandlerPreviewCapture(t *testing.T) {
 		ResponseBody: []byte(`{"content":[{"type":"text","text":"hello"}]}`),
 	}))
 
-	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview", handler.PreviewCapture)
 
@@ -139,7 +140,7 @@ func TestUsageHandlerPreviewCapture(t *testing.T) {
 func TestUsageHandlerPreviewCaptureServiceUnavailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	handler := NewUsageHandler(nil, nil, nil, nil, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	handler := NewUsageHandler(nil, nil, nil, nil, nil, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview", handler.PreviewCapture)
 
@@ -156,7 +157,7 @@ func TestUsageHandlerPreviewCaptureLink(t *testing.T) {
 	const requestID = "req_preview_link_1"
 	apiKeyID := int64(9)
 	captureSvc := newUsageCaptureTestService(t, requestID, &apiKeyID)
-	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview-link", handler.PreviewCaptureLink)
 
@@ -179,7 +180,7 @@ func TestUsageHandlerPreviewCaptureLinkNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	captureSvc := newUsageCaptureTestService(t, "req_exists", nil)
-	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, nil, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
 	router := gin.New()
 	router.GET("/admin/usage/captures/preview-link", handler.PreviewCaptureLink)
 
@@ -188,6 +189,76 @@ func TestUsageHandlerPreviewCaptureLinkNotFound(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestUsageHandlerCaptureShareLifecycle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Given
+	const requestID = "req_share_admin_1"
+	apiKeyID := int64(11)
+	captureSvc := newUsageCaptureTestService(t, requestID, &apiKeyID)
+	shareRepo := &fakeUsageCaptureShareRepo{}
+	shareSvc := service.NewUsageCaptureShareService(shareRepo, captureSvc)
+	handler := NewUsageHandler(nil, nil, nil, nil, captureSvc, shareSvc, &config.Config{JWT: config.JWTConfig{Secret: usageCaptureTestJWTSecret}})
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 99})
+		c.Next()
+	})
+	router.POST("/api/v1/admin/usage/captures/shares", handler.CreateCaptureShare)
+	router.GET("/api/v1/admin/usage/captures/shares", handler.ListCaptureShares)
+	router.POST("/api/v1/admin/usage/captures/shares/:id/revoke", handler.RevokeCaptureShare)
+
+	createPayload := []byte(`{"request_id":"` + requestID + `","api_key_id":11,"expires_in_days":1,"label":"review"}`)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/captures/shares", bytes.NewReader(createPayload))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	router.ServeHTTP(createRec, createReq)
+
+	require.Equal(t, http.StatusOK, createRec.Code)
+	var createBody struct {
+		Data struct {
+			ShareID   string     `json:"share_id"`
+			Path      string     `json:"path"`
+			ExpiresAt *time.Time `json:"expires_at"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &createBody))
+	require.NotEmpty(t, createBody.Data.ShareID)
+	require.Equal(t, "/s/"+createBody.Data.ShareID, createBody.Data.Path)
+	require.NotNil(t, createBody.Data.ExpiresAt)
+	require.Len(t, shareRepo.shares, 1)
+	require.Equal(t, int64(99), *shareRepo.shares[0].CreatedBy)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/admin/usage/captures/shares?request_id="+requestID, nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+
+	require.Equal(t, http.StatusOK, listRec.Code)
+	var listBody struct {
+		Data struct {
+			Items []struct {
+				ID      int64  `json:"id"`
+				ShareID string `json:"share_id"`
+				Path    string `json:"path"`
+				Status  string `json:"status"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(listRec.Body.Bytes(), &listBody))
+	require.Len(t, listBody.Data.Items, 1)
+	require.Equal(t, "active", listBody.Data.Items[0].Status)
+	require.Equal(t, "/s/"+createBody.Data.ShareID, listBody.Data.Items[0].Path)
+
+	revokeReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/captures/shares/"+strconv.FormatInt(listBody.Data.Items[0].ID, 10)+"/revoke", nil)
+	revokeRec := httptest.NewRecorder()
+	router.ServeHTTP(revokeRec, revokeReq)
+
+	require.Equal(t, http.StatusOK, revokeRec.Code)
+	_, err := shareSvc.ResolvePublic(context.Background(), createBody.Data.ShareID)
+	require.ErrorIs(t, err, service.ErrUsageRequestCaptureShareNotFound)
 }
 
 func newUsageCaptureTestService(t *testing.T, requestID string, apiKeyID *int64) *service.UsageCaptureService {
@@ -209,4 +280,63 @@ func newUsageCaptureTestService(t *testing.T, requestID string, apiKeyID *int64)
 		ResponseBody: []byte(`{"content":[{"type":"text","text":"hello"}]}`),
 	}))
 	return captureSvc
+}
+
+type fakeUsageCaptureShareRepo struct {
+	shares []*service.UsageRequestCaptureShare
+}
+
+func (r *fakeUsageCaptureShareRepo) Create(_ context.Context, share *service.UsageRequestCaptureShare) error {
+	if share.ID == 0 {
+		share.ID = int64(len(r.shares) + 1)
+	}
+	if share.CreatedAt.IsZero() {
+		share.CreatedAt = time.Now()
+	}
+	cloned := *share
+	r.shares = append(r.shares, &cloned)
+	return nil
+}
+
+func (r *fakeUsageCaptureShareRepo) GetByShareID(_ context.Context, shareID string) (*service.UsageRequestCaptureShare, error) {
+	for _, share := range r.shares {
+		if share.ShareID == shareID {
+			cloned := *share
+			return &cloned, nil
+		}
+	}
+	return nil, service.ErrUsageRequestCaptureShareNotFound
+}
+
+func (r *fakeUsageCaptureShareRepo) List(_ context.Context, filter service.ShareListFilter, _, _ int) ([]*service.UsageRequestCaptureShare, int64, error) {
+	items := make([]*service.UsageRequestCaptureShare, 0, len(r.shares))
+	for _, share := range r.shares {
+		if filter.RequestID != "" && share.RequestID != filter.RequestID {
+			continue
+		}
+		cloned := *share
+		items = append(items, &cloned)
+	}
+	return items, int64(len(items)), nil
+}
+
+func (r *fakeUsageCaptureShareRepo) Revoke(_ context.Context, id int64, revokedAt time.Time) error {
+	for _, share := range r.shares {
+		if share.ID == id {
+			share.RevokedAt = &revokedAt
+			return nil
+		}
+	}
+	return service.ErrUsageRequestCaptureShareNotFound
+}
+
+func (r *fakeUsageCaptureShareRepo) IncrementView(_ context.Context, shareID string, viewedAt time.Time) error {
+	for _, share := range r.shares {
+		if share.ShareID == shareID {
+			share.ViewCount++
+			share.LastViewedAt = &viewedAt
+			return nil
+		}
+	}
+	return service.ErrUsageRequestCaptureShareNotFound
 }

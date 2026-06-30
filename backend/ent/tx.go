@@ -74,6 +74,8 @@ type Tx struct {
 	UsageLog *UsageLogClient
 	// UsageRequestCapture is the client for interacting with the UsageRequestCapture builders.
 	UsageRequestCapture *UsageRequestCaptureClient
+	// UsageRequestCaptureShare is the client for interacting with the UsageRequestCaptureShare builders.
+	UsageRequestCaptureShare *UsageRequestCaptureShareClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserAllowedGroup is the client for interacting with the UserAllowedGroup builders.
@@ -247,6 +249,7 @@ func (tx *Tx) init() {
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.UsageRequestCapture = NewUsageRequestCaptureClient(tx.config)
+	tx.UsageRequestCaptureShare = NewUsageRequestCaptureShareClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserAllowedGroup = NewUserAllowedGroupClient(tx.config)
 	tx.UserAttributeDefinition = NewUserAttributeDefinitionClient(tx.config)

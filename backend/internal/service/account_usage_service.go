@@ -87,6 +87,14 @@ type UsageRequestCaptureRepository interface {
 	DeleteExpired(ctx context.Context, before time.Time, batchSize int) (int, error)
 }
 
+type UsageRequestCaptureShareRepository interface {
+	Create(ctx context.Context, share *UsageRequestCaptureShare) error
+	GetByShareID(ctx context.Context, shareID string) (*UsageRequestCaptureShare, error)
+	List(ctx context.Context, filter ShareListFilter, page, pageSize int) ([]*UsageRequestCaptureShare, int64, error)
+	Revoke(ctx context.Context, id int64, revokedAt time.Time) error
+	IncrementView(ctx context.Context, shareID string, viewedAt time.Time) error
+}
+
 type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }

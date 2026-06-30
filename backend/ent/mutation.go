@@ -43,6 +43,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcaptureshare"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -91,6 +92,7 @@ const (
 	TypeUsageCleanupTask              = "UsageCleanupTask"
 	TypeUsageLog                      = "UsageLog"
 	TypeUsageRequestCapture           = "UsageRequestCapture"
+	TypeUsageRequestCaptureShare      = "UsageRequestCaptureShare"
 	TypeUser                          = "User"
 	TypeUserAllowedGroup              = "UserAllowedGroup"
 	TypeUserAttributeDefinition       = "UserAttributeDefinition"
@@ -40478,6 +40480,1039 @@ func (m *UsageRequestCaptureMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *UsageRequestCaptureMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown UsageRequestCapture edge %s", name)
+}
+
+// UsageRequestCaptureShareMutation represents an operation that mutates the UsageRequestCaptureShare nodes in the graph.
+type UsageRequestCaptureShareMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int64
+	share_id       *string
+	request_id     *string
+	api_key_id     *int64
+	addapi_key_id  *int64
+	created_by     *int64
+	addcreated_by  *int64
+	label          *string
+	expires_at     *time.Time
+	revoked_at     *time.Time
+	view_count     *int
+	addview_count  *int
+	last_viewed_at *time.Time
+	created_at     *time.Time
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*UsageRequestCaptureShare, error)
+	predicates     []predicate.UsageRequestCaptureShare
+}
+
+var _ ent.Mutation = (*UsageRequestCaptureShareMutation)(nil)
+
+// usagerequestcaptureshareOption allows management of the mutation configuration using functional options.
+type usagerequestcaptureshareOption func(*UsageRequestCaptureShareMutation)
+
+// newUsageRequestCaptureShareMutation creates new mutation for the UsageRequestCaptureShare entity.
+func newUsageRequestCaptureShareMutation(c config, op Op, opts ...usagerequestcaptureshareOption) *UsageRequestCaptureShareMutation {
+	m := &UsageRequestCaptureShareMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUsageRequestCaptureShare,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUsageRequestCaptureShareID sets the ID field of the mutation.
+func withUsageRequestCaptureShareID(id int64) usagerequestcaptureshareOption {
+	return func(m *UsageRequestCaptureShareMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UsageRequestCaptureShare
+		)
+		m.oldValue = func(ctx context.Context) (*UsageRequestCaptureShare, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UsageRequestCaptureShare.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUsageRequestCaptureShare sets the old UsageRequestCaptureShare of the mutation.
+func withUsageRequestCaptureShare(node *UsageRequestCaptureShare) usagerequestcaptureshareOption {
+	return func(m *UsageRequestCaptureShareMutation) {
+		m.oldValue = func(context.Context) (*UsageRequestCaptureShare, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UsageRequestCaptureShareMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UsageRequestCaptureShareMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UsageRequestCaptureShareMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UsageRequestCaptureShareMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UsageRequestCaptureShare.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetShareID sets the "share_id" field.
+func (m *UsageRequestCaptureShareMutation) SetShareID(s string) {
+	m.share_id = &s
+}
+
+// ShareID returns the value of the "share_id" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) ShareID() (r string, exists bool) {
+	v := m.share_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldShareID returns the old "share_id" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldShareID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldShareID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldShareID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldShareID: %w", err)
+	}
+	return oldValue.ShareID, nil
+}
+
+// ResetShareID resets all changes to the "share_id" field.
+func (m *UsageRequestCaptureShareMutation) ResetShareID() {
+	m.share_id = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *UsageRequestCaptureShareMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *UsageRequestCaptureShareMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *UsageRequestCaptureShareMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *UsageRequestCaptureShareMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (m *UsageRequestCaptureShareMutation) ClearAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	m.clearedFields[usagerequestcaptureshare.FieldAPIKeyID] = struct{}{}
+}
+
+// APIKeyIDCleared returns if the "api_key_id" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) APIKeyIDCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldAPIKeyID]
+	return ok
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *UsageRequestCaptureShareMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldAPIKeyID)
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *UsageRequestCaptureShareMutation) SetCreatedBy(i int64) {
+	m.created_by = &i
+	m.addcreated_by = nil
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) CreatedBy() (r int64, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldCreatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// AddCreatedBy adds i to the "created_by" field.
+func (m *UsageRequestCaptureShareMutation) AddCreatedBy(i int64) {
+	if m.addcreated_by != nil {
+		*m.addcreated_by += i
+	} else {
+		m.addcreated_by = &i
+	}
+}
+
+// AddedCreatedBy returns the value that was added to the "created_by" field in this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedCreatedBy() (r int64, exists bool) {
+	v := m.addcreated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *UsageRequestCaptureShareMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	m.clearedFields[usagerequestcaptureshare.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *UsageRequestCaptureShareMutation) ResetCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldCreatedBy)
+}
+
+// SetLabel sets the "label" field.
+func (m *UsageRequestCaptureShareMutation) SetLabel(s string) {
+	m.label = &s
+}
+
+// Label returns the value of the "label" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) Label() (r string, exists bool) {
+	v := m.label
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLabel returns the old "label" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldLabel(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLabel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLabel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLabel: %w", err)
+	}
+	return oldValue.Label, nil
+}
+
+// ClearLabel clears the value of the "label" field.
+func (m *UsageRequestCaptureShareMutation) ClearLabel() {
+	m.label = nil
+	m.clearedFields[usagerequestcaptureshare.FieldLabel] = struct{}{}
+}
+
+// LabelCleared returns if the "label" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) LabelCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldLabel]
+	return ok
+}
+
+// ResetLabel resets all changes to the "label" field.
+func (m *UsageRequestCaptureShareMutation) ResetLabel() {
+	m.label = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldLabel)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *UsageRequestCaptureShareMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *UsageRequestCaptureShareMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[usagerequestcaptureshare.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *UsageRequestCaptureShareMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldExpiresAt)
+}
+
+// SetRevokedAt sets the "revoked_at" field.
+func (m *UsageRequestCaptureShareMutation) SetRevokedAt(t time.Time) {
+	m.revoked_at = &t
+}
+
+// RevokedAt returns the value of the "revoked_at" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) RevokedAt() (r time.Time, exists bool) {
+	v := m.revoked_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevokedAt returns the old "revoked_at" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldRevokedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevokedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevokedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevokedAt: %w", err)
+	}
+	return oldValue.RevokedAt, nil
+}
+
+// ClearRevokedAt clears the value of the "revoked_at" field.
+func (m *UsageRequestCaptureShareMutation) ClearRevokedAt() {
+	m.revoked_at = nil
+	m.clearedFields[usagerequestcaptureshare.FieldRevokedAt] = struct{}{}
+}
+
+// RevokedAtCleared returns if the "revoked_at" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) RevokedAtCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldRevokedAt]
+	return ok
+}
+
+// ResetRevokedAt resets all changes to the "revoked_at" field.
+func (m *UsageRequestCaptureShareMutation) ResetRevokedAt() {
+	m.revoked_at = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldRevokedAt)
+}
+
+// SetViewCount sets the "view_count" field.
+func (m *UsageRequestCaptureShareMutation) SetViewCount(i int) {
+	m.view_count = &i
+	m.addview_count = nil
+}
+
+// ViewCount returns the value of the "view_count" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) ViewCount() (r int, exists bool) {
+	v := m.view_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldViewCount returns the old "view_count" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldViewCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldViewCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldViewCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldViewCount: %w", err)
+	}
+	return oldValue.ViewCount, nil
+}
+
+// AddViewCount adds i to the "view_count" field.
+func (m *UsageRequestCaptureShareMutation) AddViewCount(i int) {
+	if m.addview_count != nil {
+		*m.addview_count += i
+	} else {
+		m.addview_count = &i
+	}
+}
+
+// AddedViewCount returns the value that was added to the "view_count" field in this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedViewCount() (r int, exists bool) {
+	v := m.addview_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetViewCount resets all changes to the "view_count" field.
+func (m *UsageRequestCaptureShareMutation) ResetViewCount() {
+	m.view_count = nil
+	m.addview_count = nil
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (m *UsageRequestCaptureShareMutation) SetLastViewedAt(t time.Time) {
+	m.last_viewed_at = &t
+}
+
+// LastViewedAt returns the value of the "last_viewed_at" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) LastViewedAt() (r time.Time, exists bool) {
+	v := m.last_viewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastViewedAt returns the old "last_viewed_at" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldLastViewedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastViewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastViewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastViewedAt: %w", err)
+	}
+	return oldValue.LastViewedAt, nil
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (m *UsageRequestCaptureShareMutation) ClearLastViewedAt() {
+	m.last_viewed_at = nil
+	m.clearedFields[usagerequestcaptureshare.FieldLastViewedAt] = struct{}{}
+}
+
+// LastViewedAtCleared returns if the "last_viewed_at" field was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) LastViewedAtCleared() bool {
+	_, ok := m.clearedFields[usagerequestcaptureshare.FieldLastViewedAt]
+	return ok
+}
+
+// ResetLastViewedAt resets all changes to the "last_viewed_at" field.
+func (m *UsageRequestCaptureShareMutation) ResetLastViewedAt() {
+	m.last_viewed_at = nil
+	delete(m.clearedFields, usagerequestcaptureshare.FieldLastViewedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UsageRequestCaptureShareMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UsageRequestCaptureShareMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UsageRequestCaptureShare entity.
+// If the UsageRequestCaptureShare object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageRequestCaptureShareMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UsageRequestCaptureShareMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the UsageRequestCaptureShareMutation builder.
+func (m *UsageRequestCaptureShareMutation) Where(ps ...predicate.UsageRequestCaptureShare) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UsageRequestCaptureShareMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UsageRequestCaptureShareMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UsageRequestCaptureShare, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UsageRequestCaptureShareMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UsageRequestCaptureShareMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UsageRequestCaptureShare).
+func (m *UsageRequestCaptureShareMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UsageRequestCaptureShareMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.share_id != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldShareID)
+	}
+	if m.request_id != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldRequestID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldAPIKeyID)
+	}
+	if m.created_by != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldCreatedBy)
+	}
+	if m.label != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldLabel)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldExpiresAt)
+	}
+	if m.revoked_at != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldRevokedAt)
+	}
+	if m.view_count != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldViewCount)
+	}
+	if m.last_viewed_at != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldLastViewedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UsageRequestCaptureShareMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case usagerequestcaptureshare.FieldShareID:
+		return m.ShareID()
+	case usagerequestcaptureshare.FieldRequestID:
+		return m.RequestID()
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		return m.APIKeyID()
+	case usagerequestcaptureshare.FieldCreatedBy:
+		return m.CreatedBy()
+	case usagerequestcaptureshare.FieldLabel:
+		return m.Label()
+	case usagerequestcaptureshare.FieldExpiresAt:
+		return m.ExpiresAt()
+	case usagerequestcaptureshare.FieldRevokedAt:
+		return m.RevokedAt()
+	case usagerequestcaptureshare.FieldViewCount:
+		return m.ViewCount()
+	case usagerequestcaptureshare.FieldLastViewedAt:
+		return m.LastViewedAt()
+	case usagerequestcaptureshare.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UsageRequestCaptureShareMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case usagerequestcaptureshare.FieldShareID:
+		return m.OldShareID(ctx)
+	case usagerequestcaptureshare.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case usagerequestcaptureshare.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case usagerequestcaptureshare.FieldLabel:
+		return m.OldLabel(ctx)
+	case usagerequestcaptureshare.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case usagerequestcaptureshare.FieldRevokedAt:
+		return m.OldRevokedAt(ctx)
+	case usagerequestcaptureshare.FieldViewCount:
+		return m.OldViewCount(ctx)
+	case usagerequestcaptureshare.FieldLastViewedAt:
+		return m.OldLastViewedAt(ctx)
+	case usagerequestcaptureshare.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UsageRequestCaptureShare field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageRequestCaptureShareMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case usagerequestcaptureshare.FieldShareID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetShareID(v)
+		return nil
+	case usagerequestcaptureshare.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case usagerequestcaptureshare.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case usagerequestcaptureshare.FieldLabel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLabel(v)
+		return nil
+	case usagerequestcaptureshare.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case usagerequestcaptureshare.FieldRevokedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevokedAt(v)
+		return nil
+	case usagerequestcaptureshare.FieldViewCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetViewCount(v)
+		return nil
+	case usagerequestcaptureshare.FieldLastViewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastViewedAt(v)
+		return nil
+	case usagerequestcaptureshare.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCaptureShare field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedFields() []string {
+	var fields []string
+	if m.addapi_key_id != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldAPIKeyID)
+	}
+	if m.addcreated_by != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldCreatedBy)
+	}
+	if m.addview_count != nil {
+		fields = append(fields, usagerequestcaptureshare.FieldViewCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UsageRequestCaptureShareMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case usagerequestcaptureshare.FieldCreatedBy:
+		return m.AddedCreatedBy()
+	case usagerequestcaptureshare.FieldViewCount:
+		return m.AddedViewCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageRequestCaptureShareMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case usagerequestcaptureshare.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedBy(v)
+		return nil
+	case usagerequestcaptureshare.FieldViewCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddViewCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCaptureShare numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UsageRequestCaptureShareMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(usagerequestcaptureshare.FieldAPIKeyID) {
+		fields = append(fields, usagerequestcaptureshare.FieldAPIKeyID)
+	}
+	if m.FieldCleared(usagerequestcaptureshare.FieldCreatedBy) {
+		fields = append(fields, usagerequestcaptureshare.FieldCreatedBy)
+	}
+	if m.FieldCleared(usagerequestcaptureshare.FieldLabel) {
+		fields = append(fields, usagerequestcaptureshare.FieldLabel)
+	}
+	if m.FieldCleared(usagerequestcaptureshare.FieldExpiresAt) {
+		fields = append(fields, usagerequestcaptureshare.FieldExpiresAt)
+	}
+	if m.FieldCleared(usagerequestcaptureshare.FieldRevokedAt) {
+		fields = append(fields, usagerequestcaptureshare.FieldRevokedAt)
+	}
+	if m.FieldCleared(usagerequestcaptureshare.FieldLastViewedAt) {
+		fields = append(fields, usagerequestcaptureshare.FieldLastViewedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UsageRequestCaptureShareMutation) ClearField(name string) error {
+	switch name {
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		m.ClearAPIKeyID()
+		return nil
+	case usagerequestcaptureshare.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	case usagerequestcaptureshare.FieldLabel:
+		m.ClearLabel()
+		return nil
+	case usagerequestcaptureshare.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	case usagerequestcaptureshare.FieldRevokedAt:
+		m.ClearRevokedAt()
+		return nil
+	case usagerequestcaptureshare.FieldLastViewedAt:
+		m.ClearLastViewedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCaptureShare nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UsageRequestCaptureShareMutation) ResetField(name string) error {
+	switch name {
+	case usagerequestcaptureshare.FieldShareID:
+		m.ResetShareID()
+		return nil
+	case usagerequestcaptureshare.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case usagerequestcaptureshare.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case usagerequestcaptureshare.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case usagerequestcaptureshare.FieldLabel:
+		m.ResetLabel()
+		return nil
+	case usagerequestcaptureshare.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case usagerequestcaptureshare.FieldRevokedAt:
+		m.ResetRevokedAt()
+		return nil
+	case usagerequestcaptureshare.FieldViewCount:
+		m.ResetViewCount()
+		return nil
+	case usagerequestcaptureshare.FieldLastViewedAt:
+		m.ResetLastViewedAt()
+		return nil
+	case usagerequestcaptureshare.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageRequestCaptureShare field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UsageRequestCaptureShareMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UsageRequestCaptureShareMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UsageRequestCaptureShareMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UsageRequestCaptureShareMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UsageRequestCaptureShareMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown UsageRequestCaptureShare unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UsageRequestCaptureShareMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown UsageRequestCaptureShare edge %s", name)
 }
 
 // UserMutation represents an operation that mutates the User nodes in the graph.

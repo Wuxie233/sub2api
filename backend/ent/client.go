@@ -45,6 +45,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcaptureshare"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -120,6 +121,8 @@ type Client struct {
 	UsageLog *UsageLogClient
 	// UsageRequestCapture is the client for interacting with the UsageRequestCapture builders.
 	UsageRequestCapture *UsageRequestCaptureClient
+	// UsageRequestCaptureShare is the client for interacting with the UsageRequestCaptureShare builders.
+	UsageRequestCaptureShare *UsageRequestCaptureShareClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// UserAllowedGroup is the client for interacting with the UserAllowedGroup builders.
@@ -173,6 +176,7 @@ func (c *Client) init() {
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.UsageRequestCapture = NewUsageRequestCaptureClient(c.config)
+	c.UsageRequestCaptureShare = NewUsageRequestCaptureShareClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserAllowedGroup = NewUserAllowedGroupClient(c.config)
 	c.UserAttributeDefinition = NewUserAttributeDefinitionClient(c.config)
@@ -301,6 +305,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		UsageRequestCapture:           NewUsageRequestCaptureClient(cfg),
+		UsageRequestCaptureShare:      NewUsageRequestCaptureShareClient(cfg),
 		User:                          NewUserClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
@@ -356,6 +361,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		UsageRequestCapture:           NewUsageRequestCaptureClient(cfg),
+		UsageRequestCaptureShare:      NewUsageRequestCaptureShareClient(cfg),
 		User:                          NewUserClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
@@ -399,8 +405,9 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.UsageRequestCapture, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
-		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
+		c.UsageRequestCapture, c.UsageRequestCaptureShare, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -418,8 +425,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.UsageRequestCapture, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
-		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
+		c.UsageRequestCapture, c.UsageRequestCaptureShare, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -488,6 +496,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UsageLog.mutate(ctx, m)
 	case *UsageRequestCaptureMutation:
 		return c.UsageRequestCapture.mutate(ctx, m)
+	case *UsageRequestCaptureShareMutation:
+		return c.UsageRequestCaptureShare.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	case *UserAllowedGroupMutation:
@@ -5206,6 +5216,139 @@ func (c *UsageRequestCaptureClient) mutate(ctx context.Context, m *UsageRequestC
 	}
 }
 
+// UsageRequestCaptureShareClient is a client for the UsageRequestCaptureShare schema.
+type UsageRequestCaptureShareClient struct {
+	config
+}
+
+// NewUsageRequestCaptureShareClient returns a client for the UsageRequestCaptureShare from the given config.
+func NewUsageRequestCaptureShareClient(c config) *UsageRequestCaptureShareClient {
+	return &UsageRequestCaptureShareClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `usagerequestcaptureshare.Hooks(f(g(h())))`.
+func (c *UsageRequestCaptureShareClient) Use(hooks ...Hook) {
+	c.hooks.UsageRequestCaptureShare = append(c.hooks.UsageRequestCaptureShare, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `usagerequestcaptureshare.Intercept(f(g(h())))`.
+func (c *UsageRequestCaptureShareClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UsageRequestCaptureShare = append(c.inters.UsageRequestCaptureShare, interceptors...)
+}
+
+// Create returns a builder for creating a UsageRequestCaptureShare entity.
+func (c *UsageRequestCaptureShareClient) Create() *UsageRequestCaptureShareCreate {
+	mutation := newUsageRequestCaptureShareMutation(c.config, OpCreate)
+	return &UsageRequestCaptureShareCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UsageRequestCaptureShare entities.
+func (c *UsageRequestCaptureShareClient) CreateBulk(builders ...*UsageRequestCaptureShareCreate) *UsageRequestCaptureShareCreateBulk {
+	return &UsageRequestCaptureShareCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UsageRequestCaptureShareClient) MapCreateBulk(slice any, setFunc func(*UsageRequestCaptureShareCreate, int)) *UsageRequestCaptureShareCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UsageRequestCaptureShareCreateBulk{err: fmt.Errorf("calling to UsageRequestCaptureShareClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UsageRequestCaptureShareCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UsageRequestCaptureShareCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UsageRequestCaptureShare.
+func (c *UsageRequestCaptureShareClient) Update() *UsageRequestCaptureShareUpdate {
+	mutation := newUsageRequestCaptureShareMutation(c.config, OpUpdate)
+	return &UsageRequestCaptureShareUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UsageRequestCaptureShareClient) UpdateOne(_m *UsageRequestCaptureShare) *UsageRequestCaptureShareUpdateOne {
+	mutation := newUsageRequestCaptureShareMutation(c.config, OpUpdateOne, withUsageRequestCaptureShare(_m))
+	return &UsageRequestCaptureShareUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UsageRequestCaptureShareClient) UpdateOneID(id int64) *UsageRequestCaptureShareUpdateOne {
+	mutation := newUsageRequestCaptureShareMutation(c.config, OpUpdateOne, withUsageRequestCaptureShareID(id))
+	return &UsageRequestCaptureShareUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UsageRequestCaptureShare.
+func (c *UsageRequestCaptureShareClient) Delete() *UsageRequestCaptureShareDelete {
+	mutation := newUsageRequestCaptureShareMutation(c.config, OpDelete)
+	return &UsageRequestCaptureShareDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UsageRequestCaptureShareClient) DeleteOne(_m *UsageRequestCaptureShare) *UsageRequestCaptureShareDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UsageRequestCaptureShareClient) DeleteOneID(id int64) *UsageRequestCaptureShareDeleteOne {
+	builder := c.Delete().Where(usagerequestcaptureshare.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UsageRequestCaptureShareDeleteOne{builder}
+}
+
+// Query returns a query builder for UsageRequestCaptureShare.
+func (c *UsageRequestCaptureShareClient) Query() *UsageRequestCaptureShareQuery {
+	return &UsageRequestCaptureShareQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUsageRequestCaptureShare},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UsageRequestCaptureShare entity by its id.
+func (c *UsageRequestCaptureShareClient) Get(ctx context.Context, id int64) (*UsageRequestCaptureShare, error) {
+	return c.Query().Where(usagerequestcaptureshare.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UsageRequestCaptureShareClient) GetX(ctx context.Context, id int64) *UsageRequestCaptureShare {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UsageRequestCaptureShareClient) Hooks() []Hook {
+	return c.hooks.UsageRequestCaptureShare
+}
+
+// Interceptors returns the client interceptors.
+func (c *UsageRequestCaptureShareClient) Interceptors() []Interceptor {
+	return c.inters.UsageRequestCaptureShare
+}
+
+func (c *UsageRequestCaptureShareClient) mutate(ctx context.Context, m *UsageRequestCaptureShareMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UsageRequestCaptureShareCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UsageRequestCaptureShareUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UsageRequestCaptureShareUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UsageRequestCaptureShareDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UsageRequestCaptureShare mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -6356,9 +6499,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Hook
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture,
+		UsageRequestCaptureShare, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6367,9 +6510,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Interceptor
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, UsageRequestCapture,
+		UsageRequestCaptureShare, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

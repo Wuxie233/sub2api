@@ -57,6 +57,7 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 	return strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/pulse") ||
 		strings.HasPrefix(trimmed, "/usage-capture-view") ||
+		strings.HasPrefix(trimmed, "/s/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
 		strings.HasPrefix(trimmed, "/backend-api/") ||

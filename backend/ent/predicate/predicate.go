@@ -96,6 +96,9 @@ type UsageLog func(*sql.Selector)
 // UsageRequestCapture is the predicate function for usagerequestcapture builders.
 type UsageRequestCapture func(*sql.Selector)
 
+// UsageRequestCaptureShare is the predicate function for usagerequestcaptureshare builders.
+type UsageRequestCaptureShare func(*sql.Selector)
+
 // User is the predicate function for user builders.
 type User func(*sql.Selector)
 

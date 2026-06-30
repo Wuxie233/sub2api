@@ -580,6 +580,9 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		usage.POST("/cleanup-tasks/:id/cancel", h.Admin.Usage.CancelCleanupTask)
 		usage.GET("/captures/preview", h.Admin.Usage.PreviewCapture)
 		usage.GET("/captures/preview-link", h.Admin.Usage.PreviewCaptureLink)
+		usage.POST("/captures/shares", h.Admin.Usage.CreateCaptureShare)
+		usage.GET("/captures/shares", h.Admin.Usage.ListCaptureShares)
+		usage.POST("/captures/shares/:id/revoke", h.Admin.Usage.RevokeCaptureShare)
 	}
 }
 

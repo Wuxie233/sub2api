@@ -1525,6 +1525,43 @@ var (
 			},
 		},
 	}
+	// UsageRequestCaptureSharesColumns holds the columns for the "usage_request_capture_shares" table.
+	UsageRequestCaptureSharesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "share_id", Type: field.TypeString, Size: 64},
+		{Name: "request_id", Type: field.TypeString, Size: 64},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "label", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "view_count", Type: field.TypeInt, Default: 0},
+		{Name: "last_viewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// UsageRequestCaptureSharesTable holds the schema information for the "usage_request_capture_shares" table.
+	UsageRequestCaptureSharesTable = &schema.Table{
+		Name:       "usage_request_capture_shares",
+		Columns:    UsageRequestCaptureSharesColumns,
+		PrimaryKey: []*schema.Column{UsageRequestCaptureSharesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usagerequestcaptureshare_share_id",
+				Unique:  true,
+				Columns: []*schema.Column{UsageRequestCaptureSharesColumns[1]},
+			},
+			{
+				Name:    "usagerequestcaptureshare_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsageRequestCaptureSharesColumns[2]},
+			},
+			{
+				Name:    "usagerequestcaptureshare_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageRequestCaptureSharesColumns[6]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1857,6 +1894,7 @@ var (
 		UsageCleanupTasksTable,
 		UsageLogsTable,
 		UsageRequestCapturesTable,
+		UsageRequestCaptureSharesTable,
 		UsersTable,
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
@@ -1982,6 +2020,9 @@ func init() {
 	}
 	UsageRequestCapturesTable.Annotation = &entsql.Annotation{
 		Table: "usage_request_captures",
+	}
+	UsageRequestCaptureSharesTable.Annotation = &entsql.Annotation{
+		Table: "usage_request_capture_shares",
 	}
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",

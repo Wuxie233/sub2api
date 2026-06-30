@@ -39,6 +39,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/usagerequestcapture"
+	"github.com/Wei-Shaw/sub2api/ent/usagerequestcaptureshare"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -913,6 +914,33 @@ func (f TraverseUsageRequestCapture) Traverse(ctx context.Context, q ent.Query) 
 	return fmt.Errorf("unexpected query type %T. expect *ent.UsageRequestCaptureQuery", q)
 }
 
+// The UsageRequestCaptureShareFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UsageRequestCaptureShareFunc func(context.Context, *ent.UsageRequestCaptureShareQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UsageRequestCaptureShareFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UsageRequestCaptureShareQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UsageRequestCaptureShareQuery", q)
+}
+
+// The TraverseUsageRequestCaptureShare type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUsageRequestCaptureShare func(context.Context, *ent.UsageRequestCaptureShareQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUsageRequestCaptureShare) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUsageRequestCaptureShare) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UsageRequestCaptureShareQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UsageRequestCaptureShareQuery", q)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary function as a Querier.
 type UserFunc func(context.Context, *ent.UserQuery) (ent.Value, error)
 
@@ -1138,6 +1166,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.UsageLogQuery, predicate.UsageLog, usagelog.OrderOption]{typ: ent.TypeUsageLog, tq: q}, nil
 	case *ent.UsageRequestCaptureQuery:
 		return &query[*ent.UsageRequestCaptureQuery, predicate.UsageRequestCapture, usagerequestcapture.OrderOption]{typ: ent.TypeUsageRequestCapture, tq: q}, nil
+	case *ent.UsageRequestCaptureShareQuery:
+		return &query[*ent.UsageRequestCaptureShareQuery, predicate.UsageRequestCaptureShare, usagerequestcaptureshare.OrderOption]{typ: ent.TypeUsageRequestCaptureShare, tq: q}, nil
 	case *ent.UserQuery:
 		return &query[*ent.UserQuery, predicate.User, user.OrderOption]{typ: ent.TypeUser, tq: q}, nil
 	case *ent.UserAllowedGroupQuery:
