@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, previewCapture } = vi.hoisted(() => {
+const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, previewLink } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -17,7 +17,7 @@ const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, pr
     getById: vi.fn(),
     getModelStats: vi.fn(),
     listErrorLogs: vi.fn(),
-    previewCapture: vi.fn(),
+    previewLink: vi.fn(),
   }
 })
 
@@ -36,7 +36,7 @@ vi.mock('@/api/admin', () => ({
 }))
 
 vi.mock('@/api/admin/usage', () => ({
-  adminUsageAPI: { list, previewCapture },
+  adminUsageAPI: { list, previewLink },
 }))
 
 vi.mock('@/api/admin/ops', () => ({ listErrorLogs }))
@@ -68,10 +68,6 @@ const UsageTableStub = {
     '<div data-test="usage-table"><button class="preview-btn" @click="$emit(\'preview\', { request_id: \'req-cap-1\', model: \'claude-3-haiku\', api_key_id: 5 })">preview</button></div>',
 }
 
-// Keep the real URL constructor; only attach the two blob helpers as spies.
-const createObjectURL = vi.fn(() => 'blob:mock-capture-url')
-const revokeObjectURL = vi.fn()
-
 function mountView() {
   return mount(UsageView, {
     attachTo: document.body,
@@ -101,12 +97,16 @@ function mountView() {
 }
 
 describe('admin UsageView capture preview modal', () => {
+  let originalCreateObjectURL: typeof URL.createObjectURL | undefined
+  let originalRevokeObjectURL: typeof URL.revokeObjectURL | undefined
+
   beforeEach(() => {
     vi.useFakeTimers()
+    originalCreateObjectURL = URL.createObjectURL
+    originalRevokeObjectURL = URL.revokeObjectURL
     list.mockReset(); getStats.mockReset(); getSnapshotV2.mockReset()
-    getModelStats.mockReset(); listErrorLogs.mockReset(); previewCapture.mockReset()
+    getModelStats.mockReset(); listErrorLogs.mockReset(); previewLink.mockReset()
     showWarning.mockReset(); showError.mockReset()
-    createObjectURL.mockClear(); revokeObjectURL.mockClear()
 
     list.mockResolvedValue({ items: [], total: 0, pages: 0 })
     getStats.mockResolvedValue({
@@ -117,18 +117,22 @@ describe('admin UsageView capture preview modal', () => {
     getModelStats.mockResolvedValue({ models: [] })
     listErrorLogs.mockResolvedValue({ items: [], total: 0, pages: 0 })
 
-    ;(globalThis.URL as any).createObjectURL = createObjectURL
-    ;(globalThis.URL as any).revokeObjectURL = revokeObjectURL
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    URL.createObjectURL = originalCreateObjectURL as typeof URL.createObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL as typeof URL.revokeObjectURL
     document.body.innerHTML = ''
   })
 
-  it('opens an in-app iframe modal with the blob URL (no window.open) and revokes on close', async () => {
+  it('opens an in-app iframe modal with the signed preview URL and no blob URL', async () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
-    previewCapture.mockResolvedValue(new Blob(['<html></html>'], { type: 'text/html' }))
+    const createObjectURLSpy = vi.fn()
+    const revokeObjectURLSpy = vi.fn()
+    URL.createObjectURL = createObjectURLSpy as typeof URL.createObjectURL
+    URL.revokeObjectURL = revokeObjectURLSpy as typeof URL.revokeObjectURL
+    previewLink.mockResolvedValue({ url: '/usage-capture-view?request_id=req-cap-1&token=signed' })
 
     const wrapper = mountView()
     vi.advanceTimersByTime(120)
@@ -138,14 +142,13 @@ describe('admin UsageView capture preview modal', () => {
     await flushPromises()
     await nextTick()
 
-    expect(previewCapture).toHaveBeenCalledWith('req-cap-1', 5)
+    expect(previewLink).toHaveBeenCalledWith('req-cap-1', 5)
     expect(openSpy).not.toHaveBeenCalled()
-    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(createObjectURLSpy).not.toHaveBeenCalled()
 
-    // BaseDialog teleports to body; assert the iframe is present with the blob URL.
     const iframe = document.body.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.getAttribute('src')).toBe('blob:mock-capture-url')
+    expect(iframe?.getAttribute('src')).toBe('/usage-capture-view?request_id=req-cap-1&token=signed')
     expect((wrapper.vm as any).previewOpen).toBe(true)
 
     // Close via the component handler and assert cleanup.
@@ -153,7 +156,7 @@ describe('admin UsageView capture preview modal', () => {
     await flushPromises()
     await nextTick()
 
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-capture-url')
+    expect(revokeObjectURLSpy).not.toHaveBeenCalled()
     expect((wrapper.vm as any).previewOpen).toBe(false)
     expect((wrapper.vm as any).previewUrl).toBe('')
 
@@ -162,7 +165,7 @@ describe('admin UsageView capture preview modal', () => {
   })
 
   it('shows the unavailable warning on a 404 and does not open the modal', async () => {
-    previewCapture.mockRejectedValue({ status: 404 })
+    previewLink.mockRejectedValue({ status: 404 })
 
     const wrapper = mountView()
     vi.advanceTimersByTime(120)

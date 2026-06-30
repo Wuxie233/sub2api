@@ -149,7 +149,6 @@
     :hide-actions="true"
     @close="showBalanceHistoryModal = false; balanceHistoryUser = null"
   />
-  <!-- Capture conversation preview: in-app blob iframe modal (mobile-safe; top-level blob nav is blocked on mobile) -->
   <BaseDialog
     :show="previewOpen"
     :title="previewModalTitle"
@@ -249,10 +248,6 @@ const handleUserClick = async (userId: number) => {
   }
 }
 
-// Per-row capture preview: fetch the self-contained HTML via authenticated apiClient
-// (JWT Bearer header, no token in URL) and render it in an in-app iframe modal. Mobile
-// browsers block top-level navigation to blob: URLs, but a blob-backed <iframe> renders
-// fine (backend CSP allows frame-src 'self' blob:).
 const previewingRequestId = ref<string | null>(null)
 const previewOpen = ref(false)
 const previewUrl = ref('')
@@ -268,9 +263,8 @@ const openCapturePreview = async (row: AdminUsageLog) => {
   }
   previewingRequestId.value = row.request_id
   try {
-    const blob = await adminUsageAPI.previewCapture(row.request_id, row.api_key_id)
-    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-    previewUrl.value = URL.createObjectURL(blob)
+    const { url } = await adminUsageAPI.previewLink(row.request_id, row.api_key_id)
+    previewUrl.value = url
     previewTitle.value = row.model || row.request_id
     previewOpen.value = true
   } catch (error: any) {
@@ -285,7 +279,6 @@ const openCapturePreview = async (row: AdminUsageLog) => {
 }
 const closeCapturePreview = () => {
   previewOpen.value = false
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = ''
   previewTitle.value = ''
 }
@@ -749,7 +742,7 @@ onMounted(() => {
   loadSavedColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside); if (previewUrl.value) URL.revokeObjectURL(previewUrl.value) })
+onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)

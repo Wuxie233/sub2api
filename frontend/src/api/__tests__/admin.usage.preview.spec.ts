@@ -10,35 +10,32 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-import { previewCapture } from '@/api/admin/usage'
+import { previewLink } from '@/api/admin/usage'
 
-describe('admin usage api previewCapture', () => {
+describe('admin usage api previewLink', () => {
   beforeEach(() => {
     get.mockReset()
   })
 
-  it('requests the capture preview as a blob via apiClient and returns the blob', async () => {
-    const blob = new Blob(['<html></html>'], { type: 'text/html' })
-    get.mockResolvedValue({ data: blob })
+  it('requests a signed capture preview URL via apiClient and returns it', async () => {
+    const response = { url: '/usage-capture-view?request_id=req-123&token=signed' }
+    get.mockResolvedValue({ data: response })
 
-    const result = await previewCapture('req-123', 7)
+    const result = await previewLink('req-123', 7)
 
-    expect(get).toHaveBeenCalledWith('/admin/usage/captures/preview', {
+    expect(get).toHaveBeenCalledWith('/admin/usage/captures/preview-link', {
       params: { request_id: 'req-123', api_key_id: 7 },
-      responseType: 'blob',
     })
-    expect(result).toBe(blob)
+    expect(result).toBe(response)
   })
 
   it('omits api_key_id when not provided', async () => {
-    const blob = new Blob(['<html></html>'], { type: 'text/html' })
-    get.mockResolvedValue({ data: blob })
+    get.mockResolvedValue({ data: { url: '/usage-capture-view?request_id=req-456&token=signed' } })
 
-    await previewCapture('req-456')
+    await previewLink('req-456')
 
-    expect(get).toHaveBeenCalledWith('/admin/usage/captures/preview', {
+    expect(get).toHaveBeenCalledWith('/admin/usage/captures/preview-link', {
       params: { request_id: 'req-456', api_key_id: undefined },
-      responseType: 'blob',
     })
   })
 })

@@ -80,6 +80,10 @@ export interface CreateUsageCleanupTaskRequest {
   timezone?: string
 }
 
+export interface UsageCapturePreviewLinkResponse {
+  url: string
+}
+
 export interface AdminUsageQueryParams extends UsageQueryParams {
   user_id?: number
   exact_total?: boolean
@@ -200,17 +204,9 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
   return data
 }
 
-/**
- * Preview a captured conversation as self-contained HTML (admin only).
- * Authenticated via apiClient (JWT Bearer header); no token is placed in the URL.
- * @param requestId - The usage log request_id whose capture to preview
- * @param apiKeyId - Optional API key id that owns the capture
- * @returns Blob containing a self-contained HTML document
- */
-export async function previewCapture(requestId: string, apiKeyId?: number): Promise<Blob> {
-  const { data } = await apiClient.get<Blob>('/admin/usage/captures/preview', {
-    params: { request_id: requestId, api_key_id: apiKeyId },
-    responseType: 'blob'
+export async function previewLink(requestId: string, apiKeyId?: number): Promise<UsageCapturePreviewLinkResponse> {
+  const { data } = await apiClient.get<UsageCapturePreviewLinkResponse>('/admin/usage/captures/preview-link', {
+    params: { request_id: requestId, api_key_id: apiKeyId }
   })
   return data
 }
@@ -223,7 +219,7 @@ export const adminUsageAPI = {
   listCleanupTasks,
   createCleanupTask,
   cancelCleanupTask,
-  previewCapture
+  previewLink
 }
 
 export default adminUsageAPI
