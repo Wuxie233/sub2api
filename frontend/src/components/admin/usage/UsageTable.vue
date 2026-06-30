@@ -208,6 +208,15 @@
               />
               <span class="text-xs">{{ t('usage.preview') }}</span>
             </button>
+            <button
+              type="button"
+              :title="t('usage.share.button')"
+              class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+              @click="$emit('share', row)"
+            >
+              <Icon name="link" size="sm" />
+              <span class="text-xs">{{ t('usage.share.button') }}</span>
+            </button>
           </div>
         </template>
 
@@ -481,6 +490,7 @@ defineEmits<{
   userClick: [userID: number, email?: string]
   sort: [key: string, order: 'asc' | 'desc']
   preview: [row: AdminUsageLog]
+  share: [row: AdminUsageLog]
 }>()
 const { t } = useI18n()
 

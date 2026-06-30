@@ -66,6 +66,15 @@
       </div>
       <UsageFilters v-model="filters" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
         <template #after-reset>
+          <button
+            type="button"
+            @click="openManageShares"
+            class="btn btn-secondary px-2 md:px-3"
+            :title="t('usage.share.manageButton')"
+          >
+            <Icon name="link" size="sm" class="h-4 w-4 md:mr-1.5" :stroke-width="1.5" />
+            <span class="hidden md:inline">{{ t('usage.share.manageButton') }}</span>
+          </button>
           <div class="relative" ref="columnDropdownRef">
             <button
               @click="showColumnDropdown = !showColumnDropdown"
@@ -120,6 +129,7 @@
           @sort="handleSort"
           @userClick="handleUserClick"
           @preview="openCapturePreview"
+          @share="openCreateShare"
         />
         <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
       </div>
@@ -165,6 +175,152 @@
       ></iframe>
     </div>
   </BaseDialog>
+  <!-- Create share link -->
+  <BaseDialog
+    :show="shareCreateOpen"
+    :title="t('usage.share.createTitle')"
+    width="normal"
+    @close="closeCreateShare"
+  >
+    <div class="space-y-4">
+      <div>
+        <label class="input-label">{{ t('usage.share.expiry') }}</label>
+        <Select v-model="shareExpiryOption" :options="shareExpiryOptions" />
+      </div>
+      <div v-if="shareExpiryOption === 'custom'">
+        <label class="input-label">{{ t('usage.share.customDays') }}</label>
+        <input
+          v-model.number="shareCustomDays"
+          type="number"
+          min="1"
+          class="input"
+          :placeholder="t('usage.share.customDaysPlaceholder')"
+        />
+      </div>
+      <div>
+        <label class="input-label">{{ t('usage.share.labelOptional') }}</label>
+        <input
+          v-model="shareLabel"
+          type="text"
+          maxlength="200"
+          class="input"
+          :placeholder="t('usage.share.labelPlaceholder')"
+        />
+      </div>
+      <div v-if="shareCreatedUrl" class="space-y-1.5">
+        <label class="input-label">{{ t('usage.share.publicUrl') }}</label>
+        <div class="flex items-center gap-2">
+          <input
+            :value="shareCreatedUrl"
+            readonly
+            class="input flex-1 font-mono text-xs"
+            @focus="selectInputText"
+          />
+          <button type="button" class="btn btn-secondary shrink-0" @click="copyShareUrl(shareCreatedUrl)">
+            <Icon name="copy" size="sm" class="h-4 w-4 md:mr-1.5" />
+            <span class="hidden md:inline">{{ t('usage.share.copy') }}</span>
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.share.publicUrlHint') }}</p>
+      </div>
+    </div>
+    <template #footer>
+      <div class="flex justify-end gap-3">
+        <button type="button" class="btn btn-secondary" @click="closeCreateShare">
+          {{ t('usage.share.close') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="shareCreating || (shareExpiryOption === 'custom' && !(Number(shareCustomDays) > 0))"
+          @click="submitCreateShare"
+        >
+          {{ shareCreating ? t('usage.share.creating') : t('usage.share.create') }}
+        </button>
+      </div>
+    </template>
+  </BaseDialog>
+  <!-- Manage shares -->
+  <BaseDialog
+    :show="shareManageOpen"
+    :title="t('usage.share.manageTitle')"
+    width="full"
+    @close="closeManageShares"
+  >
+    <div class="space-y-4">
+      <div class="card overflow-hidden">
+        <div class="overflow-auto">
+          <DataTable :columns="shareColumns" :data="shares" :loading="sharesLoading">
+            <template #cell-link="{ row }">
+              <button
+                type="button"
+                class="inline-flex max-w-[320px] items-center gap-1 text-sm text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                :title="absoluteShareUrl(row.path)"
+                @click="copyShareUrl(absoluteShareUrl(row.path))"
+              >
+                <Icon name="copy" size="sm" class="h-4 w-4 shrink-0" />
+                <span class="truncate font-mono text-xs">{{ absoluteShareUrl(row.path) }}</span>
+              </button>
+            </template>
+            <template #cell-status="{ row }">
+              <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="shareStatusBadgeClass(row.status)">
+                {{ shareStatusLabel(row.status) }}
+              </span>
+            </template>
+            <template #cell-label="{ row }">
+              <span v-if="row.label" class="text-sm text-gray-900 dark:text-white">{{ row.label }}</span>
+              <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+            </template>
+            <template #cell-created_at="{ value }">
+              <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
+            </template>
+            <template #cell-expires_at="{ row }">
+              <span class="text-sm text-gray-600 dark:text-gray-400">
+                {{ row.expires_at ? formatDateTime(row.expires_at) : t('usage.share.neverExpires') }}
+              </span>
+            </template>
+            <template #cell-view_count="{ row }">
+              <span class="text-sm text-gray-600 dark:text-gray-400">{{ (row.view_count ?? 0).toLocaleString() }}</span>
+            </template>
+            <template #cell-actions="{ row }">
+              <button
+                v-if="row.status === 'active'"
+                type="button"
+                :disabled="shareRevoking"
+                class="inline-flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-dark-700 dark:hover:text-red-400"
+                :title="t('usage.share.revoke')"
+                @click="askRevokeShare(row)"
+              >
+                <Icon name="ban" size="sm" />
+                <span class="text-xs">{{ t('usage.share.revoke') }}</span>
+              </button>
+              <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+            </template>
+            <template #empty>
+              <div class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('usage.share.empty') }}</div>
+            </template>
+          </DataTable>
+        </div>
+      </div>
+      <Pagination
+        v-if="sharesTotal > 0"
+        :page="sharesPage"
+        :total="sharesTotal"
+        :page-size="sharesPageSize"
+        @update:page="handleSharesPageChange"
+        @update:pageSize="handleSharesPageSizeChange"
+      />
+    </div>
+  </BaseDialog>
+  <ConfirmDialog
+    :show="shareRevokeConfirmOpen"
+    :title="t('usage.share.revokeConfirmTitle')"
+    :message="t('usage.share.revokeConfirmMessage')"
+    :confirm-text="t('usage.share.revoke')"
+    danger
+    @confirm="confirmRevokeShare"
+    @cancel="cancelRevokeShare"
+  />
 </template>
 
 <script setup lang="ts">
@@ -174,7 +330,8 @@ import { saveAs } from 'file-saver'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'; import { adminAPI } from '@/api/admin'; import { adminUsageAPI } from '@/api/admin/usage'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-import { formatReasoningEffort } from '@/utils/format'
+import { formatReasoningEffort, formatDateTime } from '@/utils/format'
+import { useClipboard } from '@/composables/useClipboard'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
@@ -182,6 +339,8 @@ import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageEx
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import DataTable from '@/components/common/DataTable.vue'
 import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
 import OpsErrorDetailModal from '@/views/admin/ops/components/OpsErrorDetailModal.vue'
 import { listErrorLogs } from '@/api/admin/ops'
@@ -189,7 +348,8 @@ import type { OpsErrorLog } from '@/api/admin/ops'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
+import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams, CaptureShare, CaptureShareStatus, CreateCaptureShareRequest } from '@/api/admin/usage'
+import type { Column } from '@/components/common/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -281,6 +441,196 @@ const closeCapturePreview = () => {
   previewOpen.value = false
   previewUrl.value = ''
   previewTitle.value = ''
+}
+
+// ==================== Capture share ====================
+const { copyToClipboard } = useClipboard()
+
+const absoluteShareUrl = (path: string): string => `${window.location.origin}${path}`
+
+const copyShareUrl = (url: string) => {
+  void copyToClipboard(url, t('usage.share.copySuccess'))
+}
+
+const selectInputText = (event: FocusEvent) => {
+  const target = event.target as HTMLInputElement | null
+  target?.select()
+}
+
+type ShareExpiryOption = '0' | '1' | '7' | '30' | 'custom'
+
+const shareExpiryOptions = computed(() => [
+  { value: '0', label: t('usage.share.expiryPermanent') },
+  { value: '1', label: t('usage.share.expiry1Day') },
+  { value: '7', label: t('usage.share.expiry7Days') },
+  { value: '30', label: t('usage.share.expiry30Days') },
+  { value: 'custom', label: t('usage.share.expiryCustom') }
+])
+
+const shareCreateOpen = ref(false)
+const shareRow = ref<AdminUsageLog | null>(null)
+const shareExpiryOption = ref<ShareExpiryOption>('0')
+const shareCustomDays = ref<number | null>(null)
+const shareLabel = ref('')
+const shareCreating = ref(false)
+const shareCreatedUrl = ref('')
+
+const openCreateShare = (row: AdminUsageLog) => {
+  if (!row.request_id) {
+    appStore.showWarning(t('usage.previewUnavailable'))
+    return
+  }
+  shareRow.value = row
+  shareExpiryOption.value = '0'
+  shareCustomDays.value = null
+  shareLabel.value = ''
+  shareCreatedUrl.value = ''
+  shareCreateOpen.value = true
+}
+
+const closeCreateShare = () => {
+  shareCreateOpen.value = false
+  shareRow.value = null
+  shareCreatedUrl.value = ''
+}
+
+const resolveExpiresInDays = (): number | undefined => {
+  if (shareExpiryOption.value === '0') return undefined
+  if (shareExpiryOption.value === 'custom') {
+    const days = Number(shareCustomDays.value)
+    return Number.isFinite(days) && days > 0 ? Math.floor(days) : undefined
+  }
+  return Number(shareExpiryOption.value)
+}
+
+const submitCreateShare = async () => {
+  const row = shareRow.value
+  if (!row?.request_id || shareCreating.value) return
+  shareCreating.value = true
+  try {
+    const payload: CreateCaptureShareRequest = { request_id: row.request_id }
+    if (row.api_key_id) payload.api_key_id = row.api_key_id
+    const days = resolveExpiresInDays()
+    if (days && days > 0) payload.expires_in_days = days
+    const label = shareLabel.value.trim()
+    if (label) payload.label = label
+    const res = await adminUsageAPI.createCaptureShare(payload)
+    shareCreatedUrl.value = absoluteShareUrl(res.path)
+    appStore.showSuccess(t('usage.share.createSuccess'))
+  } catch (error: any) {
+    if (error?.status === 404) {
+      appStore.showWarning(t('usage.share.captureNotFound'))
+    } else {
+      appStore.showError(t('usage.share.createFailed'))
+    }
+  } finally {
+    shareCreating.value = false
+  }
+}
+
+const shareManageOpen = ref(false)
+const shares = ref<CaptureShare[]>([])
+const sharesLoading = ref(false)
+const sharesPage = ref(1)
+const sharesPageSize = ref(getPersistedPageSize())
+const sharesTotal = ref(0)
+let sharesAbort: AbortController | null = null
+
+const shareColumns = computed<Column[]>(() => [
+  { key: 'link', label: t('usage.share.columnLink') },
+  { key: 'status', label: t('usage.share.columnStatus') },
+  { key: 'label', label: t('usage.share.columnLabel') },
+  { key: 'created_at', label: t('usage.share.columnCreated') },
+  { key: 'expires_at', label: t('usage.share.columnExpires') },
+  { key: 'view_count', label: t('usage.share.columnViews') },
+  { key: 'actions', label: t('usage.share.columnActions') }
+])
+
+const shareStatusLabel = (status: CaptureShareStatus): string => {
+  if (status === 'active') return t('usage.share.statusActive')
+  if (status === 'expired') return t('usage.share.statusExpired')
+  return t('usage.share.statusRevoked')
+}
+
+const shareStatusBadgeClass = (status: CaptureShareStatus): string => {
+  if (status === 'active') return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+  if (status === 'revoked') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+  return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+}
+
+const loadShares = async () => {
+  sharesAbort?.abort()
+  const c = new AbortController()
+  sharesAbort = c
+  sharesLoading.value = true
+  try {
+    const res = await adminUsageAPI.listCaptureShares(
+      { page: sharesPage.value, page_size: sharesPageSize.value },
+      { signal: c.signal }
+    )
+    if (!c.signal.aborted) {
+      shares.value = res.items
+      sharesTotal.value = res.total
+    }
+  } catch (error: any) {
+    if (error?.name !== 'AbortError') {
+      appStore.showError(t('usage.share.loadFailed'))
+    }
+  } finally {
+    if (sharesAbort === c) sharesLoading.value = false
+  }
+}
+
+const openManageShares = () => {
+  shareManageOpen.value = true
+  sharesPage.value = 1
+  loadShares()
+}
+
+const closeManageShares = () => {
+  shareManageOpen.value = false
+  sharesAbort?.abort()
+}
+
+const handleSharesPageChange = (p: number) => {
+  sharesPage.value = p
+  loadShares()
+}
+const handleSharesPageSizeChange = (s: number) => {
+  sharesPageSize.value = s
+  sharesPage.value = 1
+  loadShares()
+}
+
+const shareRevokeConfirmOpen = ref(false)
+const shareRevokeTarget = ref<CaptureShare | null>(null)
+const shareRevoking = ref(false)
+
+const askRevokeShare = (row: CaptureShare) => {
+  shareRevokeTarget.value = row
+  shareRevokeConfirmOpen.value = true
+}
+
+const cancelRevokeShare = () => {
+  shareRevokeConfirmOpen.value = false
+  shareRevokeTarget.value = null
+}
+
+const confirmRevokeShare = async () => {
+  const target = shareRevokeTarget.value
+  if (!target || shareRevoking.value) return
+  shareRevoking.value = true
+  try {
+    await adminUsageAPI.revokeCaptureShare(target.id)
+    appStore.showSuccess(t('usage.share.revokeSuccess'))
+    shareRevokeConfirmOpen.value = false
+    shareRevokeTarget.value = null
+    await loadShares()
+  } catch {
+    appStore.showError(t('usage.share.revokeFailed'))
+  } finally {
+    shareRevoking.value = false
+  }
 }
 
 const granularityOptions = computed(() => [{ value: 'day', label: t('admin.dashboard.day') }, { value: 'hour', label: t('admin.dashboard.hour') }])
@@ -742,7 +1092,7 @@ onMounted(() => {
   loadSavedColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); sharesAbort?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)

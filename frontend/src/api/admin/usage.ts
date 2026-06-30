@@ -84,6 +84,45 @@ export interface UsageCapturePreviewLinkResponse {
   url: string
 }
 
+export type CaptureShareStatus = 'active' | 'expired' | 'revoked'
+
+export interface CreateCaptureShareRequest {
+  request_id: string
+  api_key_id?: number
+  /** Omit or 0 = permanent (never expires). */
+  expires_in_days?: number
+  label?: string
+}
+
+export interface CreateCaptureShareResponse {
+  share_id: string
+  /** Relative path "/s/<id>"; absolute URL = window.location.origin + path. */
+  path: string
+  expires_at: string | null
+  created_at: string
+}
+
+export interface CaptureShare {
+  id: number
+  share_id: string
+  path: string
+  request_id: string
+  api_key_id: number | null
+  label: string | null
+  status: CaptureShareStatus
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+  view_count: number
+  last_viewed_at: string | null
+}
+
+export interface ListCaptureSharesParams {
+  request_id?: string
+  page?: number
+  page_size?: number
+}
+
 export interface AdminUsageQueryParams extends UsageQueryParams {
   user_id?: number
   exact_total?: boolean
@@ -211,6 +250,26 @@ export async function previewLink(requestId: string, apiKeyId?: number): Promise
   return data
 }
 
+export async function createCaptureShare(payload: CreateCaptureShareRequest): Promise<CreateCaptureShareResponse> {
+  const { data } = await apiClient.post<CreateCaptureShareResponse>('/admin/usage/captures/shares', payload)
+  return data
+}
+
+export async function listCaptureShares(
+  params: ListCaptureSharesParams,
+  options?: { signal?: AbortSignal }
+): Promise<PaginatedResponse<CaptureShare>> {
+  const { data } = await apiClient.get<PaginatedResponse<CaptureShare>>('/admin/usage/captures/shares', {
+    params,
+    signal: options?.signal
+  })
+  return data
+}
+
+export async function revokeCaptureShare(id: number): Promise<void> {
+  await apiClient.post(`/admin/usage/captures/shares/${id}/revoke`)
+}
+
 export const adminUsageAPI = {
   list,
   getStats,
@@ -219,7 +278,10 @@ export const adminUsageAPI = {
   listCleanupTasks,
   createCleanupTask,
   cancelCleanupTask,
-  previewLink
+  previewLink,
+  createCaptureShare,
+  listCaptureShares,
+  revokeCaptureShare
 }
 
 export default adminUsageAPI
