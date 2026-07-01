@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -718,6 +719,45 @@ func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 			require.Equal(t, tt.wantWhere, where)
 			require.Equal(t, []any{tt.wantArg}, args)
 		})
+	}
+}
+
+func TestUsageLogRepositorySumActualCostByAPIKeyIDsReturnsZeroNoQuery_whenKeyIDsEmpty(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(7 * 24 * time.Hour)
+
+	got, err := repo.SumActualCostByAPIKeyIDs(context.Background(), 9, nil, start, end)
+
+	require.NoError(t, err)
+	require.Zero(t, got)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositorySumActualCostByAPIKeyIDsQueriesExpectedActualCostSQL(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(7 * 24 * time.Hour)
+
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(actual_cost\\), 0\\) FROM usage_logs").
+		WithArgs(int64(9), pq.Array([]int64{1, 3}), start, end).
+		WillReturnRows(sqlmock.NewRows([]string{"actual_cost"}).AddRow(12.75))
+
+	got, err := repo.SumActualCostByAPIKeyIDs(context.Background(), 9, []int64{1, 3}, start, end)
+
+	require.NoError(t, err)
+	require.InDelta(t, 12.75, got, 1e-9)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGuestOwnStatsExposesNoCacheFields(t *testing.T) {
+	typ := reflect.TypeOf(service.GuestOwnStats{})
+
+	for _, fieldName := range []string{"CacheCreationTokens", "CacheReadTokens", "CacheTokens"} {
+		_, ok := typ.FieldByName(fieldName)
+		require.False(t, ok, "GuestOwnStats must not expose %s", fieldName)
 	}
 }
 

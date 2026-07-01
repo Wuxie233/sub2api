@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -15,7 +14,7 @@ import (
 )
 
 type PulseUsageProvider interface {
-	GetUsage(ctx context.Context, refresh bool) (*service.PulseUsageResult, error)
+	GetUsage(ctx context.Context, identity *config.PulseAccessTokenConfig, refresh bool) (service.PulseUsageDTO, error)
 }
 
 type PulseHandler struct {
@@ -28,12 +27,8 @@ func NewPulseHandler(cfg *config.Config, pulseService PulseUsageProvider) *Pulse
 }
 
 func (h *PulseHandler) ServePage(c *gin.Context) {
-	if !h.authorized(c) {
-		if h.disabled() {
-			c.Status(http.StatusNotFound)
-			return
-		}
-		c.Status(http.StatusUnauthorized)
+	if h.disabled() {
+		c.Status(http.StatusNotFound)
 		return
 	}
 	nonce := middleware.GetNonceFromContext(c)
@@ -42,7 +37,8 @@ func (h *PulseHandler) ServePage(c *gin.Context) {
 }
 
 func (h *PulseHandler) ServeUsage(c *gin.Context) {
-	if !h.authorized(c) {
+	identity, ok := h.identity(c)
+	if !ok {
 		if h.disabled() {
 			c.Status(http.StatusNotFound)
 			return
@@ -51,68 +47,45 @@ func (h *PulseHandler) ServeUsage(c *gin.Context) {
 		return
 	}
 
-	result, err := h.pulse.GetUsage(c.Request.Context(), c.Query("refresh") == "1")
+	refresh := c.Query("refresh") == "1" && identity.Role == config.PulseAccessRoleOwner
+	result, err := h.pulse.GetUsage(c.Request.Context(), identity, refresh)
 	if err != nil {
-		c.JSON(http.StatusOK, pulseUsageResponse{
-			Source:   sourceFromRefresh(c.Query("refresh") == "1"),
-			FiveHour: nil,
-			SevenDay: nil,
-			Error:    err.Error(),
-		})
+		c.JSON(http.StatusOK, pulseErrorResponse{Source: sourceFromRefresh(refresh), Error: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, newPulseUsageResponse(result))
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *PulseHandler) disabled() bool {
-	return h == nil || h.cfg == nil || strings.TrimSpace(h.cfg.Pulse.Token) == ""
+	return h == nil || h.cfg == nil || len(h.cfg.Pulse.AccessTokens) == 0
 }
 
-func (h *PulseHandler) authorized(c *gin.Context) bool {
+func (h *PulseHandler) identity(c *gin.Context) (*config.PulseAccessTokenConfig, bool) {
 	if h.disabled() {
-		return false
+		return nil, false
 	}
-	token := h.cfg.Pulse.Token
-	return c.GetHeader("X-Pulse-Token") == token || c.Query("token") == token
+	token := pulseTokenFromHeaders(c)
+	if token == "" {
+		return nil, false
+	}
+	return h.cfg.ResolvePulseIdentity(token)
 }
 
-type pulseUsageResponse struct {
-	AccountLabel string            `json:"account_label"`
-	Source       string            `json:"source"`
-	UpdatedAt    *time.Time        `json:"updated_at"`
-	FiveHour     *pulseWindowUsage `json:"five_hour"`
-	SevenDay     *pulseWindowUsage `json:"seven_day"`
-	Error        string            `json:"error,omitempty"`
+type pulseErrorResponse struct {
+	Source string `json:"source"`
+	Error  string `json:"error"`
 }
 
-type pulseWindowUsage struct {
-	Utilization      float64    `json:"utilization"`
-	ResetsAt         *time.Time `json:"resets_at"`
-	RemainingSeconds int        `json:"remaining_seconds"`
-}
-
-func newPulseUsageResponse(result *service.PulseUsageResult) pulseUsageResponse {
-	if result == nil || result.Usage == nil {
-		return pulseUsageResponse{Source: "passive"}
+func pulseTokenFromHeaders(c *gin.Context) string {
+	if token := strings.TrimSpace(c.GetHeader("X-Pulse-Token")); token != "" {
+		return token
 	}
-	return pulseUsageResponse{
-		AccountLabel: result.AccountLabel,
-		Source:       result.Usage.Source,
-		UpdatedAt:    result.Usage.UpdatedAt,
-		FiveHour:     newPulseWindowUsage(result.Usage.FiveHour),
-		SevenDay:     newPulseWindowUsage(result.Usage.SevenDay),
+	const bearerPrefix = "Bearer "
+	auth := strings.TrimSpace(c.GetHeader("Authorization"))
+	if strings.HasPrefix(auth, bearerPrefix) {
+		return strings.TrimSpace(strings.TrimPrefix(auth, bearerPrefix))
 	}
-}
-
-func newPulseWindowUsage(progress *service.UsageProgress) *pulseWindowUsage {
-	if progress == nil {
-		return nil
-	}
-	return &pulseWindowUsage{
-		Utilization:      progress.Utilization,
-		ResetsAt:         progress.ResetsAt,
-		RemainingSeconds: progress.RemainingSeconds,
-	}
+	return ""
 }
 
 func sourceFromRefresh(refresh bool) string {

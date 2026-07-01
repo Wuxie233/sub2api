@@ -763,6 +763,56 @@ usage_capture:
   retention_batch_size: 2000
 
 # =============================================================================
+# Weekly Quota Configuration
+# 周限额配置（重启生效）
+# =============================================================================
+weekly_quota:
+  # Enable weekly quota enforcement
+  # 启用周限额控制
+  enabled: false
+  # Per-account car policies. Can be replaced with WEEKLY_QUOTA_CARS_JSON.
+  # 每个账号车的静态策略。可通过 WEEKLY_QUOTA_CARS_JSON 覆盖。
+  cars:
+    # - account_id: 9
+    #   budget_seed_usd: 2248
+    #   guest_share_bps: 6600
+    #   owner_share_bps: 3400
+    #   min_calibration_utilization: 0.08
+    #   passive_sample_max_age_seconds: 900
+    #   guest_stop_utilization: 0.97
+    #   owner_stop_utilization: 0.985
+    #   default_reserve_usd: 0.5
+    #   owner_key_ids: [1, 3]
+    #   guest_key_ids: [23, 24]
+
+# =============================================================================
+# Pulse Dashboard Configuration
+# Pulse 仪表盘配置
+# =============================================================================
+pulse:
+  # Legacy single shared token. Prefer access_tokens for per-person access.
+  # 旧版单共享 token。推荐使用 access_tokens 做按人访问控制。
+  token: ""
+  # Optional default account for legacy Pulse mode.
+  # 旧版 Pulse 模式的默认账号。
+  account_id: 0
+  # Per-person Pulse access tokens. Store only sha256 hex hashes, never raw tokens.
+  # 按人配置 Pulse 访问 token。这里只保存 sha256 十六进制哈希，禁止保存原始 token。
+  # Can be replaced with PULSE_ACCESS_TOKENS_JSON.
+  # 可通过 PULSE_ACCESS_TOKENS_JSON 覆盖。
+  access_tokens:
+    # - token_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    #   role: "owner"
+    #   account_id: 9
+    #   api_key_id: 0
+    #   label: "owner-a"
+    # - token_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    #   role: "guest"
+    #   account_id: 9
+    #   api_key_id: 23
+    #   label: "guest-c"
+
+# =============================================================================
 # HTTP 写接口幂等配置
 # Idempotency Configuration
 # =============================================================================

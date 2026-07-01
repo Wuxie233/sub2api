@@ -76,8 +76,17 @@ type UsageLogRepository interface {
 	GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAPIKeyStatsAggregated(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
+	SumActualCostByAPIKeyIDs(ctx context.Context, accountID int64, apiKeyIDs []int64, startTime, endTime time.Time) (float64, error)
+	SumAccountActualCost(ctx context.Context, accountID int64, startTime, endTime time.Time) (float64, error)
+	GuestOwnWindowStats(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (GuestOwnStats, error)
 	GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
+}
+
+type GuestOwnStats struct {
+	RequestCount int64
+	InputTokens  int64
+	OutputTokens int64
 }
 
 type UsageRequestCaptureRepository interface {

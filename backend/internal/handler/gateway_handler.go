@@ -56,6 +56,7 @@ type GatewayHandler struct {
 	cfg                       *config.Config
 	settingService            *service.SettingService
 	captureService            *service.UsageCaptureService
+	weeklyQuotaService        weeklyQuotaGatewayService
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -75,6 +76,7 @@ func NewGatewayHandler(
 	cfg *config.Config,
 	settingService *service.SettingService,
 	captureService *service.UsageCaptureService,
+	weeklyQuotaService *service.WeeklyQuotaService,
 ) *GatewayHandler {
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 10
@@ -113,6 +115,7 @@ func NewGatewayHandler(
 		cfg:                       cfg,
 		settingService:            settingService,
 		captureService:            captureService,
+		weeklyQuotaService:        weeklyQuotaService,
 	}
 }
 
@@ -581,6 +584,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	for {
 		fs := NewFailoverState(h.maxAccountSwitches, hasBoundSession)
 		retryWithFallback := false
+		var lastWeeklyQuotaDecision service.ReserveDecision
+		weeklyQuotaOwnerCapped := false
 
 		for {
 			attemptParsedReq, err := parsedReq.CloneForBody(body)
@@ -598,6 +603,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			)
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 			if err != nil {
+				if weeklyQuotaOwnerCapped && fs.LastFailoverErr == nil {
+					h.handleWeeklyQuotaExhausted(c, lastWeeklyQuotaDecision, streamStarted)
+					return
+				}
 				if len(fs.FailedAccountIDs) == 0 {
 					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, currentAPIKey, reqModel, reqModel, platform)
 					if !cls.ModelNotFound {
@@ -726,6 +735,32 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 账号槽位/等待计数需要在超时或断开时安全回收
 			accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
+			quotaAttempt, err := h.prepareWeeklyQuotaAttempt(c.Request.Context(), account.ID, currentAPIKey.ID, fs.FailedAccountIDs)
+			if err != nil {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				reqLog.Error("gateway.weekly_quota_reserve_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Weekly quota service unavailable", streamStarted)
+				return
+			}
+			if quotaAttempt.retry {
+				lastWeeklyQuotaDecision = quotaAttempt.decision
+				weeklyQuotaOwnerCapped = true
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				continue
+			}
+			if quotaAttempt.reject {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				h.handleWeeklyQuotaExhausted(c, quotaAttempt.decision, streamStarted)
+				return
+			}
+			quotaReservation := quotaAttempt.reservation
+
 			// ===== 用户消息串行队列 START =====
 			var queueRelease func()
 			umqMode := h.getUserMsgQueueMode(account, attemptParsedReq)
@@ -782,12 +817,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if channelMapping.Mapped {
 				attemptParsedReq.Model = channelMapping.MappedModel
 				if err := attemptParsedReq.ReplaceBody(h.gatewayService.ReplaceModelInBody(attemptParsedReq.Body.Bytes(), channelMapping.MappedModel)); err != nil {
+					_ = quotaReservation.release(c.Request.Context())
 					h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 					return
 				}
 			}
 			// Bedrock CC 兼容：清理 body 专有字段 + 过滤 anthropic-beta header，适用于所有转发路径
 			if err := attemptParsedReq.ReplaceBody(h.gatewayService.ApplyBedrockCCCompat(c, attemptParsedReq.Body.Bytes(), attemptParsedReq.Model, account, apiKey.GroupID)); err != nil {
+				_ = quotaReservation.release(c.Request.Context())
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 				return
 			}
@@ -819,9 +856,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				accountReleaseFunc()
 			}
 			if err != nil {
+				releaseQuota := true
 				// Beta policy block: return 400 immediately, no failover
 				var betaBlockedErr *service.BetaBlockedError
 				if errors.As(err, &betaBlockedErr) {
+					_ = quotaReservation.release(c.Request.Context())
 					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 					h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", betaBlockedErr.Message)
 					return
@@ -829,6 +868,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 				var promptTooLongErr *service.PromptTooLongError
 				if errors.As(err, &promptTooLongErr) {
+					_ = quotaReservation.release(c.Request.Context())
 					reqLog.Warn("gateway.prompt_too_long_from_antigravity",
 						zap.Any("current_group_id", currentAPIKey.GroupID),
 						zap.Any("fallback_group_id", fallbackGroupID),
@@ -877,19 +917,27 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
 					if c.Writer.Size() != writerSizeBeforeForward {
+						_ = quotaReservation.release(c.Request.Context())
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
 					switch action {
 					case FailoverContinue:
+						_ = quotaReservation.release(c.Request.Context())
+						releaseQuota = false
 						continue
 					case FailoverExhausted:
+						_ = quotaReservation.release(c.Request.Context())
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
 						return
 					case FailoverCanceled:
+						_ = quotaReservation.release(c.Request.Context())
 						return
 					}
+				}
+				if releaseQuota {
+					_ = quotaReservation.release(c.Request.Context())
 				}
 				upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
@@ -967,24 +1015,51 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
+			usageInput := &service.RecordUsageInput{
+				Result:             result,
+				QuotaPlatform:      quotaPlatform,
+				APIKey:             currentAPIKey,
+				User:               currentAPIKey.User,
+				Account:            account,
+				Subscription:       currentSubscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				ForceCacheBilling:  forceCacheBilling,
+				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				Capture:            captureSnapshot,
+			}
+			if quotaReservation != nil {
+				actualCost, err := h.gatewayService.RecordUsageWithActualCost(c.Request.Context(), usageInput)
+				if err != nil {
+					_ = quotaReservation.release(c.Request.Context())
+					logger.L().With(
+						zap.String("component", "handler.gateway.messages"),
+						zap.Int64("user_id", subject.UserID),
+						zap.Int64("api_key_id", currentAPIKey.ID),
+						zap.Any("group_id", currentAPIKey.GroupID),
+						zap.String("model", reqModel),
+						zap.Int64("account_id", account.ID),
+					).Error("gateway.record_usage_failed", zap.Error(err))
+					return
+				}
+				if err := quotaReservation.settle(c.Request.Context(), actualCost); err != nil {
+					logger.L().With(
+						zap.String("component", "handler.gateway.messages"),
+						zap.Int64("user_id", subject.UserID),
+						zap.Int64("api_key_id", currentAPIKey.ID),
+						zap.Any("group_id", currentAPIKey.GroupID),
+						zap.String("model", reqModel),
+						zap.Int64("account_id", account.ID),
+					).Error("gateway.weekly_quota_settle_failed", zap.Error(err))
+				}
+				return
+			}
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             currentAPIKey,
-					User:               currentAPIKey.User,
-					Account:            account,
-					Subscription:       currentSubscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-					Capture:            captureSnapshot,
-				}); err != nil {
+				if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
 						zap.Int64("user_id", subject.UserID),

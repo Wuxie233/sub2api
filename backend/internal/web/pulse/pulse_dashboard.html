@@ -29,6 +29,11 @@
     --danger: #f43f5e;
     --radius-panel: 24px;
     --radius-card: 16px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   }
@@ -72,15 +77,16 @@
     mask-image: radial-gradient(circle at center, black 0%, transparent 72%);
   }
 
-  button {
-    font: inherit;
-  }
+  button { font: inherit; }
 
   .dashboard {
     position: relative;
     z-index: 1;
     width: min(100%, 900px);
   }
+
+  .view { display: none; }
+  .view.is-active { display: block; }
 
   .panel {
     position: relative;
@@ -109,6 +115,7 @@
     z-index: 1;
   }
 
+  /* ---------- shared header ---------- */
   .topbar {
     display: flex;
     align-items: flex-start;
@@ -172,6 +179,7 @@
     box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.12);
   }
 
+  /* ---------- gauges ---------- */
   .gauges {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -320,6 +328,202 @@
   .gauge-card.is-empty .unit { display: none; }
   .gauge-card.is-empty .value { color: var(--text-3); }
 
+  /* ---------- guest hero gauge ---------- */
+  .hero {
+    display: grid;
+    place-items: center;
+    padding: 6px 4px 2px;
+  }
+
+  .hero .ring-wrap {
+    width: min(100%, 316px);
+  }
+
+  .hero .value { font-size: 3.7rem; }
+  .hero .unit { font-size: 1.28rem; }
+
+  .hero-reset {
+    margin: 16px 0 0;
+    color: var(--text-1);
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hero-sub {
+    margin: 6px 0 0;
+    color: var(--text-3);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+
+  .stat {
+    min-width: 0;
+    border-radius: 14px;
+    background:
+      linear-gradient(180deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.55)),
+      var(--surface-2);
+    border: 1px solid var(--line-0);
+    padding: 15px 12px;
+    text-align: center;
+  }
+
+  .stat-label {
+    color: var(--text-3);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    margin-top: 7px;
+    color: var(--text-0);
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- owner quota pool ---------- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 24px 0 12px;
+  }
+
+  .section-title {
+    color: var(--text-0);
+    font-size: 1.02rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+
+  .section-tag {
+    color: var(--primary-strong);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .pool {
+    border-radius: var(--radius-card);
+    background:
+      linear-gradient(180deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.5)),
+      var(--surface-2);
+    border: 1px solid var(--line-0);
+    padding: 16px;
+  }
+
+  .pool-budget {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--line-0);
+  }
+
+  .pool-budget-label {
+    color: var(--text-2);
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .pool-budget-value {
+    color: var(--primary-strong);
+    font-size: 1.62rem;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pool-cell {
+    min-width: 0;
+    border-radius: 12px;
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--line-0);
+    padding: 12px 13px;
+  }
+
+  .pool-cell.accent-owner { border-color: rgba(45, 212, 191, 0.22); }
+  .pool-cell.accent-guest { border-color: rgba(129, 140, 248, 0.22); }
+  .pool-cell.accent-warn { border-color: rgba(245, 158, 11, 0.26); }
+
+  .pool-label {
+    color: var(--text-3);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+
+  .pool-value {
+    margin-top: 6px;
+    color: var(--text-0);
+    font-size: 1.16rem;
+    font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .pool-value.warn { color: var(--mid); }
+  .pool-value.danger { color: var(--high); }
+
+  .token-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .token-cell {
+    min-width: 0;
+    border-radius: 12px;
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--line-0);
+    padding: 12px 10px;
+    text-align: center;
+  }
+
+  .token-label {
+    color: var(--text-3);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .token-value {
+    margin-top: 6px;
+    color: var(--text-0);
+    font-size: 1.04rem;
+    font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- alert ---------- */
   .alert {
     display: none;
     margin-top: 18px;
@@ -334,6 +538,7 @@
 
   .alert.is-visible { display: block; }
 
+  /* ---------- footer ---------- */
   .footer {
     display: flex;
     align-items: center;
@@ -378,27 +583,45 @@
     background: rgba(148, 163, 184, 0.5);
   }
 
-  .refresh {
+  .foot-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* ---------- buttons ---------- */
+  .btn {
     position: relative;
     min-height: 44px;
     border: 0;
     border-radius: 12px;
-    background: linear-gradient(135deg, #14b8a6, #0d9488);
-    color: white;
     cursor: pointer;
     padding: 0 18px;
     font-size: 0.9rem;
     font-weight: 800;
     letter-spacing: 0.02em;
-    transition: transform 160ms var(--ease-out), opacity 160ms ease, background 160ms ease;
+    transition: transform 160ms var(--ease-out), opacity 160ms ease, background 160ms ease, border-color 160ms ease;
   }
 
-  .refresh:hover { transform: translateY(-1px); }
-  .refresh:active { transform: translateY(0) scale(0.98); }
-  .refresh:focus-visible { outline: 2px solid rgba(45, 212, 191, 0.7); outline-offset: 3px; }
-  .refresh:disabled { cursor: progress; opacity: 0.62; transform: none; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0) scale(0.98); }
+  .btn:focus-visible { outline: 2px solid rgba(45, 212, 191, 0.7); outline-offset: 3px; }
+  .btn:disabled { cursor: progress; opacity: 0.62; transform: none; }
 
-  .refresh .loading-mark {
+  .btn-primary {
+    background: linear-gradient(135deg, #14b8a6, #0d9488);
+    color: #fff;
+  }
+
+  .btn-ghost {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid var(--line-1);
+    color: var(--text-1);
+  }
+
+  .btn-ghost:hover { border-color: var(--line-1); color: var(--text-0); }
+
+  .btn .loading-mark {
     display: none;
     width: 13px;
     height: 13px;
@@ -410,21 +633,119 @@
     animation: spin 800ms linear infinite;
   }
 
-  .refresh.is-loading .loading-mark { display: inline-block; }
+  .btn.is-loading .loading-mark { display: inline-block; }
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ---------- login ---------- */
+  .login {
+    max-width: 430px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .login-mark {
+    width: 46px;
+    height: 46px;
+    margin: 0 auto 16px;
+    border-radius: 13px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.9), rgba(13, 148, 136, 0.75));
+    box-shadow: 0 8px 20px rgba(13, 148, 136, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    color: #fff;
+  }
+
+  .login-mark svg { width: 22px; height: 22px; }
+
+  .login h1 { font-size: 1.5rem; }
+
+  .login .summary {
+    margin: 10px auto 0;
+    max-width: 34ch;
+  }
+
+  .field-wrap {
+    position: relative;
+    margin-top: 22px;
+    text-align: left;
+  }
+
+  .field {
+    width: 100%;
+    min-height: 50px;
+    border-radius: 13px;
+    border: 1px solid var(--line-1);
+    background: rgba(2, 6, 23, 0.6);
+    color: var(--text-0);
+    padding: 0 52px 0 15px;
+    font-size: 0.98rem;
+    letter-spacing: 0.02em;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .field::placeholder { color: var(--text-3); }
+
+  .field:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.18);
+  }
+
+  .field-toggle {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .field-toggle:hover { color: var(--text-0); }
+  .field-toggle:focus-visible { outline: 2px solid rgba(45, 212, 191, 0.6); outline-offset: 2px; }
+
+  .login .btn-primary {
+    width: 100%;
+    margin-top: 14px;
+    min-height: 50px;
+    font-size: 0.98rem;
+  }
+
+  .login-error {
+    margin-top: 14px;
+    text-align: left;
+  }
+
+  /* ---------- responsive ---------- */
   @media (max-width: 620px) {
     body { align-items: start; padding-top: max(18px, env(safe-area-inset-top)); }
     .panel { padding: 20px; border-radius: 20px; }
     .topbar { flex-direction: column; margin-bottom: 20px; }
     h1 { font-size: 1.45rem; }
+    .login h1 { font-size: 1.34rem; }
     .summary { font-size: 0.86rem; }
     .gauges { grid-template-columns: 1fr; gap: 14px; }
     .gauge-card { padding: 16px 14px 15px; }
     .ring-wrap { width: min(100%, 224px); }
+    .hero .ring-wrap { width: min(84%, 280px); }
+    .hero .value { font-size: 3.1rem; }
+    .stat-row { gap: 9px; }
+    .stat { padding: 14px 8px; }
+    .stat-label { font-size: 0.7rem; }
+    .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
+    .pool-grid { grid-template-columns: 1fr; }
+    .token-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .token-value { font-size: 0.98rem; }
     .footer { align-items: stretch; flex-direction: column; }
-    .refresh { width: 100%; }
+    .foot-actions { flex-direction: column; }
+    .foot-actions .btn { width: 100%; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -438,18 +759,61 @@
 </style>
 </head>
 <body>
-  <main class="dashboard" aria-labelledby="title">
-    <section class="panel">
+  <main class="dashboard">
+
+    <!-- ============ LOADING ============ -->
+    <section class="panel view is-active" id="view-loading" aria-label="载入中">
+      <div class="content login">
+        <div class="login-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="9" opacity="0.28"></circle>
+            <path d="M12 3a9 9 0 0 1 9 9"></path>
+          </svg>
+        </div>
+        <h1>载入中</h1>
+        <p class="summary">正在读取用量数据…</p>
+      </div>
+    </section>
+
+    <!-- ============ LOGIN ============ -->
+    <section class="panel view" id="view-login" aria-label="登录">
+      <div class="content login">
+        <div class="login-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="10" width="16" height="10" rx="2.4"></rect>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+          </svg>
+        </div>
+        <p class="account">CLAUDE</p>
+        <h1>用量看板</h1>
+        <p class="summary">输入你的访问 token 查看专属用量。token 仅保存在本设备。</p>
+
+        <form id="loginForm" novalidate>
+          <div class="field-wrap">
+            <input class="field" id="tokenInput" type="password" inputmode="text"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   placeholder="访问 token" aria-label="访问 token" />
+            <button class="field-toggle" id="toggleToken" type="button" aria-label="显示或隐藏 token">显示</button>
+          </div>
+          <button class="btn btn-primary" id="loginBtn" type="submit">进入</button>
+        </form>
+
+        <div class="alert login-error" id="loginError" role="status"></div>
+      </div>
+    </section>
+
+    <!-- ============ OWNER ============ -->
+    <section class="panel view" id="view-owner" aria-label="车主用量看板">
       <div class="content">
         <header class="topbar">
           <div>
-            <p class="account" id="acct">CLAUDE</p>
-            <h1 id="title">滚动用量窗口</h1>
-            <p class="summary">5 小时与 7 天窗口的 Anthropic 限额占用。</p>
+            <p class="account" id="ownerAcct">CLAUDE</p>
+            <h1>滚动用量窗口</h1>
+            <p class="summary">5 小时与 7 天窗口的 Anthropic 限额占用，以及额度池明细。</p>
           </div>
-          <div class="status-pill" id="statusPill" aria-live="polite">
+          <div class="status-pill" id="ownerStatus" aria-live="polite">
             <span class="status-dot" aria-hidden="true"></span>
-            <span id="statusText">载入中</span>
+            <span id="ownerStatusText">已同步</span>
           </div>
         </header>
 
@@ -495,95 +859,234 @@
           </article>
         </div>
 
-        <div class="alert" id="err" role="status"></div>
+        <div class="section-head">
+          <span class="section-title">额度池</span>
+          <span class="section-tag" id="poolU7d">U7D —</span>
+        </div>
+        <div class="pool">
+          <div class="pool-budget">
+            <span class="pool-budget-label">有效预算</span>
+            <span class="pool-budget-value" id="poolBudget">—</span>
+          </div>
+          <div class="pool-grid">
+            <div class="pool-cell accent-owner">
+              <div class="pool-label">车主额度</div>
+              <div class="pool-value" id="poolOwnerCap">—</div>
+            </div>
+            <div class="pool-cell accent-guest">
+              <div class="pool-label">乘客额度</div>
+              <div class="pool-value" id="poolGuestCap">—</div>
+            </div>
+            <div class="pool-cell accent-owner">
+              <div class="pool-label">车主已结算 / 预留</div>
+              <div class="pool-value" id="poolOwnerSpent">—</div>
+            </div>
+            <div class="pool-cell accent-guest">
+              <div class="pool-label">乘客已结算 / 预留</div>
+              <div class="pool-value" id="poolGuestSpent">—</div>
+            </div>
+            <div class="pool-cell accent-warn">
+              <div class="pool-label">车主溢出</div>
+              <div class="pool-value" id="poolOwnerOverflow">—</div>
+            </div>
+            <div class="pool-cell accent-warn">
+              <div class="pool-label">乘客耗尽</div>
+              <div class="pool-value" id="poolGuestDepletion">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <span class="section-title">Token 统计</span>
+          <span class="section-tag">7 day</span>
+        </div>
+        <div class="token-grid">
+          <div class="token-cell">
+            <div class="token-label">请求</div>
+            <div class="token-value" id="tokReq">—</div>
+          </div>
+          <div class="token-cell">
+            <div class="token-label">输入</div>
+            <div class="token-value" id="tokIn">—</div>
+          </div>
+          <div class="token-cell">
+            <div class="token-label">输出</div>
+            <div class="token-value" id="tokOut">—</div>
+          </div>
+          <div class="token-cell">
+            <div class="token-label">缓存</div>
+            <div class="token-value" id="tokCache">—</div>
+          </div>
+          <div class="token-cell">
+            <div class="token-label">合计</div>
+            <div class="token-value" id="tokTotal">—</div>
+          </div>
+        </div>
+
+        <div class="alert" id="ownerError" role="status"></div>
 
         <footer class="footer">
           <div class="meta-row">
-            <span class="source" id="src">被动采样</span>
+            <span class="source" id="ownerSource">被动采样</span>
             <span class="dot-sep" aria-hidden="true"></span>
-            <span id="updated">尚未采样</span>
+            <span id="ownerUpdated">尚未采样</span>
           </div>
-          <button class="refresh" id="q" type="button" aria-label="主动查询用量">
-            <span class="loading-mark" aria-hidden="true"></span><span id="qText">查询</span>
-          </button>
+          <div class="foot-actions">
+            <button class="btn btn-ghost" id="ownerLogout" type="button">切换</button>
+            <button class="btn btn-primary" id="ownerRefresh" type="button" aria-label="主动查询用量">
+              <span class="loading-mark" aria-hidden="true"></span><span id="ownerRefreshText">查询</span>
+            </button>
+          </div>
         </footer>
       </div>
     </section>
+
+    <!-- ============ GUEST ============ -->
+    <section class="panel view" id="view-guest" aria-label="账号周限额">
+      <div class="content">
+        <header class="topbar">
+          <div>
+            <p class="account" id="guestAcct">CLAUDE</p>
+            <h1>账号周限额</h1>
+            <p class="summary">你的账号本周限额占用情况。</p>
+          </div>
+          <div class="status-pill" id="guestStatus" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="guestStatusText">已同步</span>
+          </div>
+        </header>
+
+        <div class="hero" aria-live="polite">
+          <article class="gauge-card is-empty" id="card-guest" style="width:100%;border:0;background:transparent;padding:0;">
+            <div class="ring-wrap">
+              <svg class="ring" viewBox="0 0 180 180" role="img" aria-hidden="true">
+                <circle class="ring-core" cx="90" cy="90" r="48"></circle>
+                <circle class="ring-track" cx="90" cy="90" r="68" pathLength="100"></circle>
+                <circle class="ring-progress" id="arc-guest" cx="90" cy="90" r="68" pathLength="100"></circle>
+              </svg>
+              <div class="ring-value">
+                <span class="value" id="value-guest">—</span>
+                <span class="unit" id="unit-guest">%</span>
+              </div>
+            </div>
+            <p class="hero-reset" id="guestReset">—</p>
+            <p class="hero-sub" id="guestSub">—</p>
+          </article>
+        </div>
+
+        <div class="stat-row" aria-live="polite">
+          <div class="stat">
+            <div class="stat-label">输入</div>
+            <div class="stat-value" id="guestIn">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">输出</div>
+            <div class="stat-value" id="guestOut">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">请求次数</div>
+            <div class="stat-value" id="guestReq">—</div>
+          </div>
+        </div>
+
+        <div class="alert" id="guestError" role="status"></div>
+
+        <footer class="footer">
+          <div class="meta-row">
+            <span class="source">账号周限额</span>
+          </div>
+          <div class="foot-actions">
+            <button class="btn btn-ghost" id="guestLogout" type="button">切换</button>
+            <button class="btn btn-primary" id="guestRefresh" type="button" aria-label="刷新用量">
+              <span class="loading-mark" aria-hidden="true"></span><span id="guestRefreshText">刷新</span>
+            </button>
+          </div>
+        </footer>
+      </div>
+    </section>
+
   </main>
 
 <script nonce="__CSP_NONCE_VALUE__">
 (() => {
-  var tok = new URLSearchParams(location.search).get('token');
-  var base = '/pulse/api/usage';
+  'use strict';
+
+  var TOKEN_KEY = 'pulse_token';
+  var API = '/pulse/api/usage';
+  var REFRESH_MS = 30000;
   var reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
-  var timer = null;
+
+  var token = null;
+  var view = 'loading';
+  var pollTimer = null;
   var clockTimer = null;
   var busy = false;
-  var lastData = null;
-  var gaugeState = {
-    five: { raw: 0, arc: 0, raf: 0 },
-    seven: { raw: 0, arc: 0, raf: 0 }
+  var deadlines = {};
+  var lastRole = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var views = {
+    loading: $('view-loading'),
+    login: $('view-login'),
+    owner: $('view-owner'),
+    guest: $('view-guest')
   };
 
-  var el = {
-    acct: document.getElementById('acct'),
-    statusPill: document.getElementById('statusPill'),
-    statusText: document.getElementById('statusText'),
-    err: document.getElementById('err'),
-    src: document.getElementById('src'),
-    updated: document.getElementById('updated'),
-    button: document.getElementById('q'),
-    buttonText: document.getElementById('qText'),
-    five: {
-      card: document.getElementById('card-five'),
-      arc: document.getElementById('arc-five'),
-      value: document.getElementById('value-five'),
-      reset: document.getElementById('reset-five'),
-      state: document.getElementById('state-five')
-    },
-    seven: {
-      card: document.getElementById('card-seven'),
-      arc: document.getElementById('arc-seven'),
-      value: document.getElementById('value-seven'),
-      reset: document.getElementById('reset-seven'),
-      state: document.getElementById('state-seven')
-    }
-  };
+  var gaugeAnim = {};
 
-  function url(refresh) {
-    var q = [];
-    if (tok) q.push(`token=${encodeURIComponent(tok)}`);
-    if (refresh) q.push('refresh=1');
-    return `${base}${q.length ? `?${q.join('&')}` : ''}`;
+  /* ---------------- helpers ---------------- */
+  function getToken() {
+    try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  }
+  function saveToken(value) {
+    try { localStorage.setItem(TOKEN_KEY, value); } catch (e) {}
+  }
+  function dropToken() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
   }
 
-  function clampArc(value) {
-    if (value == null || !Number.isFinite(value)) return 0;
-    return Math.max(0, Math.min(100, value));
+  function clampPct(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, n));
   }
-
-  function roundedPercent(value) {
-    if (value == null || !Number.isFinite(value)) return 0;
-    return Math.round(value);
+  function roundPct(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n);
   }
-
   function tone(value) {
     if (value >= 80) return 'high';
     if (value >= 55) return 'mid';
     return 'low';
   }
-
+  function stateWord(value) {
+    if (value >= 100) return '已触顶';
+    if (value >= 80) return '高占用';
+    if (value >= 55) return '接近上限';
+    return '余量充足';
+  }
+  function fmtInt(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    return Math.round(n).toLocaleString('en-US');
+  }
+  function fmtMoney(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) n = 0;
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   function fmtRemain(sec) {
     if (sec == null || !Number.isFinite(sec)) return '';
     if (sec <= 0) return '重置中';
     var d = Math.floor(sec / 86400);
     var h = Math.floor((sec % 86400) / 3600);
     var m = Math.floor((sec % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${Math.max(1, m)}m`;
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return Math.max(1, m) + 'm';
   }
-
   function fmtUpdated(value) {
     if (!value) return '尚未采样';
     var time = Date.parse(value);
@@ -591,190 +1094,340 @@
     var diff = Math.max(0, Date.now() - time);
     var min = Math.floor(diff / 60000);
     if (min < 1) return '刚刚';
-    if (min < 60) return `${min} 分钟前`;
+    if (min < 60) return min + ' 分钟前';
     var h = Math.floor(min / 60);
-    if (h < 24) return `${h} 小时前`;
-    return `${Math.floor(h / 24)} 天前`;
+    if (h < 24) return h + ' 小时前';
+    return Math.floor(h / 24) + ' 天前';
   }
-
-  function sourceLabel(value) {
-    return value === 'active' ? '主动查询' : '被动采样';
-  }
-
-  function setError(message) {
-    el.err.textContent = message || '';
-    el.err.classList.toggle('is-visible', Boolean(message));
-    el.statusPill.classList.toggle('is-error', Boolean(message));
-    el.statusText.textContent = message ? '加载失败' : '已同步';
-  }
-
-  function setButtonLoading(active) {
-    el.button.disabled = active;
-    el.button.classList.toggle('is-loading', active);
-    el.buttonText.textContent = active ? '查询中' : '查询';
-  }
-
-  function setGaugeVisual(key, raw, arc) {
-    var g = el[key];
-    g.value.textContent = String(Math.round(raw));
-    g.arc.style.strokeDashoffset = String(100 - clampArc(arc));
-    gaugeState[key].raw = raw;
-    gaugeState[key].arc = arc;
-  }
-
-  function animateGauge(key, targetRaw, targetArc) {
-    var state = gaugeState[key];
-    if (state.raf) cancelAnimationFrame(state.raf);
-    if (reduceMotion) {
-      setGaugeVisual(key, targetRaw, targetArc);
-      return;
+  function resetLabel(remainingSeconds, resetsAt) {
+    if (remainingSeconds != null && Number.isFinite(Number(remainingSeconds))) {
+      return '重置 ' + fmtRemain(Number(remainingSeconds));
     }
+    if (resetsAt) {
+      var t = Date.parse(resetsAt);
+      if (Number.isFinite(t)) return '重置 ' + fmtRemain(Math.ceil((t - Date.now()) / 1000));
+    }
+    return '—';
+  }
+  function deadlineFrom(remainingSeconds, resetsAt) {
+    if (remainingSeconds != null && Number.isFinite(Number(remainingSeconds))) {
+      return Date.now() + Number(remainingSeconds) * 1000;
+    }
+    if (resetsAt) {
+      var t = Date.parse(resetsAt);
+      if (Number.isFinite(t)) return t;
+    }
+    return null;
+  }
 
-    var startRaw = state.raw;
-    var startArc = state.arc;
+  /* ---------------- gauge animation ---------------- */
+  function paintGauge(key, arcEl, valueEl, raw, arc) {
+    valueEl.textContent = String(Math.round(raw));
+    arcEl.style.strokeDashoffset = String(100 - clampPct(arc));
+    gaugeAnim[key] = gaugeAnim[key] || {};
+    gaugeAnim[key].raw = raw;
+    gaugeAnim[key].arc = arc;
+  }
+  function animateGauge(key, arcEl, valueEl, targetRaw, targetArc) {
+    var st = gaugeAnim[key] || (gaugeAnim[key] = { raw: 0, arc: 0, raf: 0 });
+    if (st.raf) cancelAnimationFrame(st.raf);
+    if (reduceMotion) { paintGauge(key, arcEl, valueEl, targetRaw, targetArc); return; }
+    var startRaw = st.raw || 0;
+    var startArc = st.arc || 0;
     var start = performance.now();
     var duration = 780;
-
     function step(now) {
       var p = Math.min(1, (now - start) / duration);
-      var eased = 1 - (1 - p) ** 3;
-      setGaugeVisual(
-        key,
+      var eased = 1 - Math.pow(1 - p, 3);
+      paintGauge(key, arcEl, valueEl,
         startRaw + (targetRaw - startRaw) * eased,
-        startArc + (targetArc - startArc) * eased
-      );
-      if (p < 1) {
-        state.raf = requestAnimationFrame(step);
-      } else {
-        state.raf = 0;
-        setGaugeVisual(key, targetRaw, targetArc);
-      }
+        startArc + (targetArc - startArc) * eased);
+      if (p < 1) { st.raf = requestAnimationFrame(step); }
+      else { st.raf = 0; paintGauge(key, arcEl, valueEl, targetRaw, targetArc); }
     }
-    state.raf = requestAnimationFrame(step);
+    st.raf = requestAnimationFrame(step);
   }
 
-  function renderGauge(key, data) {
-    var g = el[key];
-    g.card.classList.remove('state-low', 'state-mid', 'state-high', 'is-empty');
-
-    if (!data) {
-      if (gaugeState[key].raf) cancelAnimationFrame(gaugeState[key].raf);
-      gaugeState[key].raf = 0;
-      gaugeState[key].raw = 0;
-      gaugeState[key].arc = 0;
-      g.card.classList.add('is-empty');
-      g.value.textContent = '—';
-      g.arc.style.strokeDashoffset = '100';
-      g.reset.textContent = '—';
-      g.state.textContent = '暂无窗口数据';
-      return;
-    }
-
-    var raw = roundedPercent(Number(data.utilization));
-    var arc = clampArc(Number(data.utilization));
-    g.card.classList.add(`state-${tone(raw)}`);
-    g.reset.textContent = data.remaining_seconds == null ? '—' : `重置 ${fmtRemain(Number(data.remaining_seconds))}`;
-    g.state.textContent = raw >= 100 ? '已触顶' : raw >= 80 ? '高占用' : raw >= 55 ? '接近上限' : '余量充足';
-    animateGauge(key, raw, arc);
-  }
-
-  function updateCountdowns() {
-    if (!lastData) return;
-    el.updated.textContent = fmtUpdated(lastData.updated_at);
-    updateResetLabel('five', lastData.five_hour);
-    updateResetLabel('seven', lastData.seven_day);
-  }
-
-  function updateResetLabel(key, data) {
-    if (!data) return;
-    if (data._deadline == null) {
-      el[key].reset.textContent = data.remaining_seconds == null ? '—' : `重置 ${fmtRemain(Number(data.remaining_seconds))}`;
-      return;
-    }
-    var remaining = Math.ceil((data._deadline - Date.now()) / 1000);
-    el[key].reset.textContent = `重置 ${fmtRemain(remaining)}`;
-  }
-
-  function attachDeadlines(data) {
-    ['five_hour', 'seven_day'].forEach((key) => {
-      if (data[key] && data[key].remaining_seconds != null && Number.isFinite(Number(data[key].remaining_seconds))) {
-        data[key]._deadline = Date.now() + Number(data[key].remaining_seconds) * 1000;
-      }
+  /* ---------------- view switching ---------------- */
+  function showView(name) {
+    view = name;
+    Object.keys(views).forEach(function (k) {
+      views[k].classList.toggle('is-active', k === name);
     });
-    return data;
   }
 
-  function render(data) {
-    lastData = attachDeadlines(data || {});
-    el.acct.textContent = (lastData.account_label || 'claude').toUpperCase();
-    el.src.textContent = sourceLabel(lastData.source);
-    el.updated.textContent = fmtUpdated(lastData.updated_at);
-    renderGauge('five', lastData.five_hour);
-    renderGauge('seven', lastData.seven_day);
-    setError(lastData.error || '');
+  function showLogin(message) {
+    stopPolling();
+    lastRole = null;
+    deadlines = {};
+    $('loginError').textContent = message || '';
+    $('loginError').classList.toggle('is-visible', Boolean(message));
+    showView('login');
+    var input = $('tokenInput');
+    if (input) { input.value = ''; setTimeout(function () { try { input.focus(); } catch (e) {} }, 0); }
   }
 
-  function renderHardError(message) {
-    lastData = null;
-    el.acct.textContent = 'CLAUDE';
-    el.src.textContent = '加载失败';
-    el.updated.textContent = message;
-    renderGauge('five', null);
-    renderGauge('seven', null);
-    setError(message);
+  function setStatus(prefix, isError) {
+    var pill = $(prefix + 'Status');
+    var text = $(prefix + 'StatusText');
+    if (pill) pill.classList.toggle('is-error', Boolean(isError));
+    if (text) text.textContent = isError ? '加载失败' : '已同步';
   }
 
+  function setSoftError(prefix, message) {
+    var box = $(prefix + 'Error');
+    if (box) {
+      box.textContent = message || '';
+      box.classList.toggle('is-visible', Boolean(message));
+    }
+    setStatus(prefix, Boolean(message));
+  }
+
+  function setButtonLoading(prefix, active) {
+    var btn = $(prefix + 'Refresh');
+    var txt = $(prefix + 'RefreshText');
+    if (!btn) return;
+    btn.disabled = active;
+    btn.classList.toggle('is-loading', active);
+    if (txt) txt.textContent = active ? '查询中' : (prefix === 'guest' ? '刷新' : '查询');
+  }
+
+  /* ---------------- OWNER render (owner fields only) ---------------- */
+  function renderOwnerGauge(key, win) {
+    var card = $('card-' + key);
+    var arc = $('arc-' + key);
+    var valueEl = $('value-' + key);
+    var resetEl = $('reset-' + key);
+    var stateEl = $('state-' + key);
+    card.classList.remove('state-low', 'state-mid', 'state-high', 'is-empty');
+    if (!win) {
+      if (gaugeAnim[key] && gaugeAnim[key].raf) cancelAnimationFrame(gaugeAnim[key].raf);
+      gaugeAnim[key] = { raw: 0, arc: 0, raf: 0 };
+      card.classList.add('is-empty');
+      valueEl.textContent = '—';
+      arc.style.strokeDashoffset = '100';
+      resetEl.textContent = '—';
+      stateEl.textContent = '暂无窗口数据';
+      deadlines[key] = null;
+      return;
+    }
+    var raw = roundPct(win.utilization);
+    var arcVal = clampPct(win.utilization);
+    card.classList.add('state-' + tone(raw));
+    deadlines[key] = deadlineFrom(win.remaining_seconds, win.resets_at);
+    resetEl.textContent = resetLabel(win.remaining_seconds, win.resets_at);
+    stateEl.textContent = stateWord(raw);
+    animateGauge(key, arc, valueEl, raw, arcVal);
+  }
+
+  function renderOwner(d) {
+    lastRole = 'owner';
+    $('ownerAcct').textContent = String(d.label || 'claude').toUpperCase();
+    $('ownerSource').textContent = d.source === 'active' ? '主动查询' : '被动采样';
+    $('ownerUpdated').textContent = fmtUpdated(d.updated_at);
+
+    renderOwnerGauge('five', d.five_hour);
+    renderOwnerGauge('seven', d.seven_day);
+
+    var u7d = Number(d.u7d);
+    $('poolU7d').textContent = 'U7D ' + (Number.isFinite(u7d) ? u7d.toFixed(1) : '—');
+    $('poolBudget').textContent = fmtMoney(d.effective_budget_usd);
+    $('poolOwnerCap').textContent = fmtMoney(d.owner_cap_usd);
+    $('poolGuestCap').textContent = fmtMoney(d.guest_cap_usd);
+    $('poolOwnerSpent').textContent = fmtMoney(d.owner_settled_usd) + ' / ' + fmtMoney(d.owner_reserved_usd);
+    $('poolGuestSpent').textContent = fmtMoney(d.guest_settled_usd) + ' / ' + fmtMoney(d.guest_reserved_usd);
+
+    var overflow = $('poolOwnerOverflow');
+    overflow.textContent = fmtMoney(d.owner_overflow_usd);
+    overflow.classList.toggle('warn', Number(d.owner_overflow_usd) > 0);
+
+    var depletion = $('poolGuestDepletion');
+    depletion.textContent = fmtMoney(d.guest_depletion_usd);
+    depletion.classList.toggle('danger', Number(d.guest_depletion_usd) > 0);
+
+    var ts = d.token_stats || {};
+    $('tokReq').textContent = fmtInt(ts.request_count);
+    $('tokIn').textContent = fmtInt(ts.input_tokens);
+    $('tokOut').textContent = fmtInt(ts.output_tokens);
+    $('tokCache').textContent = fmtInt(ts.cache_tokens);
+    $('tokTotal').textContent = fmtInt(ts.total_tokens);
+
+    setSoftError('owner', d.error || '');
+    showView('owner');
+  }
+
+  /* ---------------- GUEST render (guest fields ONLY) ----------------
+     Allowed fields: role, label, weekly_used_percent, weekly_remaining_percent,
+     resets_at, remaining_seconds, input_tokens, output_tokens, request_count.
+     No owner/USD/budget/cache/utilization references here. ------------------ */
+  function renderGuest(d) {
+    lastRole = 'guest';
+    $('guestAcct').textContent = String(d.label || 'claude').toUpperCase();
+
+    var card = $('card-guest');
+    var arc = $('arc-guest');
+    var valueEl = $('value-guest');
+    card.classList.remove('state-low', 'state-mid', 'state-high', 'is-empty');
+
+    var used = clampPct(d.weekly_used_percent);
+    var usedRaw = roundPct(d.weekly_used_percent);
+    card.classList.add('state-' + tone(usedRaw));
+    animateGauge('guest', arc, valueEl, usedRaw, used);
+
+    deadlines.guest = deadlineFrom(d.remaining_seconds, d.resets_at);
+    $('guestReset').textContent = resetLabel(d.remaining_seconds, d.resets_at);
+    $('guestSub').textContent = '剩余 ' + roundPct(d.weekly_remaining_percent) + '%';
+
+    $('guestIn').textContent = fmtInt(d.input_tokens);
+    $('guestOut').textContent = fmtInt(d.output_tokens);
+    $('guestReq').textContent = fmtInt(d.request_count);
+
+    setSoftError('guest', '');
+    showView('guest');
+  }
+
+  /* ---------------- countdown clock ---------------- */
+  function tickClock() {
+    if (lastRole === 'owner') {
+      ['five', 'seven'].forEach(function (key) {
+        if (deadlines[key] == null) return;
+        var remaining = Math.ceil((deadlines[key] - Date.now()) / 1000);
+        $('reset-' + key).textContent = '重置 ' + fmtRemain(remaining);
+      });
+    } else if (lastRole === 'guest') {
+      if (deadlines.guest != null) {
+        var remaining = Math.ceil((deadlines.guest - Date.now()) / 1000);
+        $('guestReset').textContent = '重置 ' + fmtRemain(remaining);
+      }
+    }
+  }
+
+  /* ---------------- fetch ---------------- */
   function load(refresh) {
-    if (busy) return;
-    var requestError;
+    if (!token || busy) return;
     busy = true;
-    if (refresh) setButtonLoading(true);
+    var wantRefresh = Boolean(refresh);
+    if (wantRefresh) setButtonLoading(lastRole === 'guest' ? 'guest' : 'owner', true);
 
-    fetch(url(refresh), { headers: { 'Accept': 'application/json' } })
-      .then((response) => {
-        return response.json().catch(() => ({})).then((body) => {
-          if (!response.ok) {
-            requestError = new Error(response.status === 401 ? '未授权 / 加载失败' : '加载失败');
-            requestError.body = body;
-            throw requestError;
+    fetch(API + (wantRefresh ? '?refresh=1' : ''), {
+      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+      cache: 'no-store'
+    })
+      .then(function (response) {
+        if (response.status === 401) {
+          var authErr = new Error('鉴权失败，请检查 token');
+          authErr.auth = true;
+          throw authErr;
+        }
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (response.status === 404) {
+            var offErr = new Error('用量看板未启用');
+            offErr.auth = true;
+            throw offErr;
           }
+          if (!response.ok) throw new Error('加载失败 (' + response.status + ')');
           return body;
         });
       })
-      .then(render)
-      .catch((error) => {
-        renderHardError(String(error?.message ? error.message : error));
+      .then(function (body) {
+        if (body && body.role === 'guest') {
+          renderGuest(body);
+        } else if (body && body.role === 'owner') {
+          renderOwner(body);
+        } else if (body && body.error != null) {
+          // soft service error on the currently active role view
+          if (lastRole === 'guest') setSoftError('guest', String(body.error));
+          else setSoftError('owner', String(body.error));
+        } else {
+          throw new Error('响应格式异常');
+        }
       })
-      .finally(() => {
+      .catch(function (error) {
+        if (error && error.auth) {
+          dropToken();
+          token = null;
+          showLogin(error.message);
+          return;
+        }
+        var prefix = lastRole === 'guest' ? 'guest' : 'owner';
+        setSoftError(prefix, String(error && error.message ? error.message : error));
+      })
+      .finally(function () {
         busy = false;
-        if (refresh) setButtonLoading(false);
+        if (wantRefresh) setButtonLoading(lastRole === 'guest' ? 'guest' : 'owner', false);
       });
   }
 
-  function start() {
-    if (!timer) {
+  /* ---------------- polling lifecycle ---------------- */
+  function startPolling() {
+    if (!token) return;
+    if (!pollTimer) {
       load(false);
-      timer = setInterval(() => { load(false); }, 30000);
+      pollTimer = setInterval(function () { load(false); }, REFRESH_MS);
     }
     if (!clockTimer) {
-      clockTimer = setInterval(updateCountdowns, 1000);
+      clockTimer = setInterval(tickClock, 1000);
     }
   }
-
-  function stop() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
-    if (clockTimer) {
-      clearInterval(clockTimer);
-      clockTimer = null;
-    }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
   }
 
-  el.button.addEventListener('click', () => { load(true); });
-  document.addEventListener('visibilitychange', () => { document.hidden ? stop() : start(); });
-  if (!document.hidden) start();
+  /* ---------------- events ---------------- */
+  $('loginForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var value = ($('tokenInput').value || '').trim();
+    if (!value) {
+      $('loginError').textContent = '请输入 token';
+      $('loginError').classList.add('is-visible');
+      return;
+    }
+    $('loginError').classList.remove('is-visible');
+    token = value;
+    saveToken(value);
+    showView('loading');
+    startPolling();
+  });
+
+  $('toggleToken').addEventListener('click', function () {
+    var input = $('tokenInput');
+    var hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    this.textContent = hidden ? '隐藏' : '显示';
+    try { input.focus(); } catch (e) {}
+  });
+
+  $('ownerRefresh').addEventListener('click', function () { load(true); });   // owner: active (?refresh=1)
+  $('guestRefresh').addEventListener('click', function () { load(false); });  // guest: passive only
+
+  function doLogout() {
+    dropToken();
+    token = null;
+    showLogin('');
+  }
+  $('ownerLogout').addEventListener('click', doLogout);
+  $('guestLogout').addEventListener('click', doLogout);
+
+  document.addEventListener('visibilitychange', function () {
+    if (view === 'login') return;
+    if (document.hidden) stopPolling();
+    else startPolling();
+  });
+
+  window.addEventListener('storage', function (ev) {
+    if (ev.key !== TOKEN_KEY) return;
+    if (!ev.newValue) { token = null; showLogin(''); }
+  });
+
+  /* ---------------- boot ---------------- */
+  token = getToken();
+  if (!token) {
+    showLogin('');
+  } else {
+    showView('loading');
+    if (!document.hidden) startPolling();
+  }
 })();
 </script>
 </body>

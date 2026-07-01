@@ -9411,6 +9411,11 @@ type recordUsageOpts struct {
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
+	_, err := s.RecordUsageWithActualCost(ctx, input)
+	return err
+}
+
+func (s *GatewayService) RecordUsageWithActualCost(ctx context.Context, input *RecordUsageInput) (float64, error) {
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -9453,7 +9458,7 @@ type RecordUsageLongContextInput struct {
 
 // RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
 func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *RecordUsageLongContextInput) error {
-	return s.recordUsageCore(ctx, &recordUsageCoreInput{
+	_, err := s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
 		User:               input.User,
@@ -9472,6 +9477,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		LongContextThreshold:  input.LongContextThreshold,
 		LongContextMultiplier: input.LongContextMultiplier,
 	})
+	return err
 }
 
 // recordUsageCoreInput 是 recordUsageCore 的公共输入字段，从两种输入结构体中提取。
@@ -9495,7 +9501,7 @@ type recordUsageCoreInput struct {
 
 // recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
 // LongContextThreshold > 0 时 Token 计费回退走 CalculateCostWithLongContext。
-func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput, opts *recordUsageOpts) error {
+func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput, opts *recordUsageOpts) (float64, error) {
 	result := input.Result
 	apiKey := input.APIKey
 	user := input.User
@@ -9583,7 +9589,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		s.captureUsageBestEffort(ctx, usageLog, result, input)
-		return nil
+		return cost.ActualCost, nil
 	}
 
 	// 配额平台由 handler 在请求 ctx 内经 QuotaPlatform() 算定并通过 input 传入；
@@ -9608,12 +9614,12 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
-		return billingErr
+		return 0, billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 	s.captureUsageBestEffort(ctx, usageLog, result, input)
 
-	return nil
+	return cost.ActualCost, nil
 }
 
 func (s *GatewayService) captureUsageBestEffort(ctx context.Context, usageLog *UsageLog, result *ForwardResult, input *recordUsageCoreInput) {

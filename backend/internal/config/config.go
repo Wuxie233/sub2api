@@ -87,6 +87,7 @@ type Config struct {
 	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
 	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
 	UsageCapture            UsageCaptureConfig            `mapstructure:"usage_capture"`
+	WeeklyQuota             WeeklyQuotaConfig             `mapstructure:"weekly_quota"`
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
 	Pulse                   PulseConfig                   `mapstructure:"pulse"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
@@ -141,8 +142,36 @@ type GeminiOAuthConfig struct {
 }
 
 type PulseConfig struct {
-	Token     string `mapstructure:"token"`
-	AccountID int64  `mapstructure:"account_id"`
+	Token        string                   `mapstructure:"token"`
+	AccountID    int64                    `mapstructure:"account_id"`
+	AccessTokens []PulseAccessTokenConfig `mapstructure:"access_tokens"`
+}
+
+type PulseAccessTokenConfig struct {
+	TokenSHA256 string `mapstructure:"token_sha256" json:"token_sha256"`
+	Role        string `mapstructure:"role" json:"role"`
+	AccountID   int64  `mapstructure:"account_id" json:"account_id"`
+	APIKeyID    int64  `mapstructure:"api_key_id" json:"api_key_id"`
+	Label       string `mapstructure:"label" json:"label"`
+}
+
+type WeeklyQuotaConfig struct {
+	Enabled bool                   `mapstructure:"enabled"`
+	Cars    []WeeklyQuotaCarConfig `mapstructure:"cars"`
+}
+
+type WeeklyQuotaCarConfig struct {
+	AccountID                  int64   `mapstructure:"account_id" json:"account_id"`
+	BudgetSeedUSD              float64 `mapstructure:"budget_seed_usd" json:"budget_seed_usd"`
+	GuestShareBps              int     `mapstructure:"guest_share_bps" json:"guest_share_bps"`
+	OwnerShareBps              int     `mapstructure:"owner_share_bps" json:"owner_share_bps"`
+	MinCalibrationUtilization  float64 `mapstructure:"min_calibration_utilization" json:"min_calibration_utilization"`
+	PassiveSampleMaxAgeSeconds int     `mapstructure:"passive_sample_max_age_seconds" json:"passive_sample_max_age_seconds"`
+	GuestStopUtilization       float64 `mapstructure:"guest_stop_utilization" json:"guest_stop_utilization"`
+	OwnerStopUtilization       float64 `mapstructure:"owner_stop_utilization" json:"owner_stop_utilization"`
+	DefaultReserveUSD          float64 `mapstructure:"default_reserve_usd" json:"default_reserve_usd"`
+	OwnerKeyIDs                []int64 `mapstructure:"owner_key_ids" json:"owner_key_ids"`
+	GuestKeyIDs                []int64 `mapstructure:"guest_key_ids" json:"guest_key_ids"`
 }
 
 type GeminiQuotaConfig struct {
@@ -1432,6 +1461,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config error: %w", err)
 	}
+	if err := applyJSONEnvOverrides(&cfg); err != nil {
+		return nil, err
+	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 15000
 	}
@@ -1483,6 +1515,8 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.OIDC.UsePKCEExplicit = hasExplicitConfigOrEnv("oidc_connect.use_pkce", "OIDC_CONNECT_USE_PKCE")
 	cfg.OIDC.ValidateIDTokenExplicit = hasExplicitConfigOrEnv("oidc_connect.validate_id_token", "OIDC_CONNECT_VALIDATE_ID_TOKEN")
 	cfg.Dashboard.KeyPrefix = strings.TrimSpace(cfg.Dashboard.KeyPrefix)
+	applyWeeklyQuotaDefaults(&cfg.WeeklyQuota)
+	normalizePulseAccessTokens(cfg.Pulse.AccessTokens)
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
@@ -1845,6 +1879,8 @@ func setDefaults() {
 	viper.SetDefault("usage_capture.retention_interval_seconds", 300)
 	viper.SetDefault("usage_capture.retention_batch_size", 2000)
 
+	viper.SetDefault("weekly_quota.enabled", false)
+
 	// Idempotency
 	viper.SetDefault("idempotency.observe_only", true)
 	viper.SetDefault("idempotency.default_ttl_seconds", 86400)
@@ -2082,6 +2118,12 @@ func (c *Config) Validate() error {
 	}
 	if c.SubscriptionMaintenance.QueueSize < 0 {
 		return fmt.Errorf("subscription_maintenance.queue_size must be non-negative")
+	}
+	if err := validateWeeklyQuotaConfig(c.WeeklyQuota); err != nil {
+		return err
+	}
+	if err := validatePulseAccessTokens(c.Pulse.AccessTokens); err != nil {
+		return err
 	}
 
 	// Gemini OAuth 配置校验：client_id 与 client_secret 必须同时设置或同时留空。

@@ -2,120 +2,194 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
-type pulseAccountRepoStub struct {
-	AccountRepository
-
-	accounts          map[int64]*Account
-	listWithFilters   []Account
-	lastPlatform      string
-	lastAccountType   string
-	lastPageSize      int
-	listWithFiltersOK bool
+type pulseQuotaSnapshotFake struct {
+	snapshot *QuotaSnapshot
 }
 
-func (r *pulseAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
-	account, ok := r.accounts[id]
+func (f *pulseQuotaSnapshotFake) Snapshot(ctx context.Context, accountID int64) (*QuotaSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.snapshot == nil {
+		return &QuotaSnapshot{AccountID: accountID}, nil
+	}
+	copy := *f.snapshot
+	copy.AccountID = accountID
+	return &copy, nil
+}
+
+type pulseAccountUsageFake struct {
+	passiveUsage    *UsageInfo
+	activeUsage     *UsageInfo
+	activeCallCount int
+}
+
+func (f *pulseAccountUsageFake) GetPassiveUsage(ctx context.Context, _ int64) (*UsageInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.passiveUsage, nil
+}
+
+func (f *pulseAccountUsageFake) GetUsage(ctx context.Context, _ int64, force ...bool) (*UsageInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(force) > 0 && force[0] {
+		f.activeCallCount++
+	}
+	return f.activeUsage, nil
+}
+
+type pulseUsageStatsFake struct {
+	accountStats *usagestats.UsageStats
+	guestStats   GuestOwnStats
+}
+
+func (f *pulseUsageStatsFake) GetAccountStatsAggregated(ctx context.Context, _ int64, _, _ time.Time) (*usagestats.UsageStats, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.accountStats, nil
+}
+
+func (f *pulseUsageStatsFake) GuestOwnWindowStats(ctx context.Context, _ int64, _, _ time.Time) (GuestOwnStats, error) {
+	if err := ctx.Err(); err != nil {
+		return GuestOwnStats{}, err
+	}
+	return f.guestStats, nil
+}
+
+func TestPulseOwnerResponseIncludesRealFields(t *testing.T) {
+	// Given
+	resetAt := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	updatedAt := resetAt.Add(-time.Hour)
+	svc := newPulseServiceWithDependencies(
+		&config.Config{},
+		PulseServiceDependencies{
+			AccountUsage: &pulseAccountUsageFake{passiveUsage: &UsageInfo{Source: "passive", UpdatedAt: &updatedAt, FiveHour: &UsageProgress{Utilization: 20}, SevenDay: &UsageProgress{Utilization: 70, ResetsAt: &resetAt, RemainingSeconds: 3600}}},
+			Quota:        &pulseQuotaSnapshotFake{snapshot: &QuotaSnapshot{EffectiveBudgetUSD: 1000, GuestCapUSD: 660, OwnerCapUSD: 340, GuestSettledUSD: 200, GuestReservedUSD: 20, OwnerSettledUSD: 400, OwnerReservedUSD: 10, OwnerOverflowUSD: 70, GuestDepletionUSD: 290, U7d: 0.7, ResetsAt: &resetAt, RemainingSeconds: 3600}},
+			UsageStats:   &pulseUsageStatsFake{accountStats: &usagestats.UsageStats{TotalRequests: 5, TotalInputTokens: 100, TotalOutputTokens: 50, TotalCacheTokens: 25, TotalTokens: 175}},
+		},
+	)
+	identity := &config.PulseAccessTokenConfig{Role: config.PulseAccessRoleOwner, AccountID: 9, Label: "owner-a"}
+
+	// When
+	dto, err := svc.GetUsage(context.Background(), identity, false)
+
+	// Then
+	if err != nil {
+		t.Fatalf("GetUsage() error = %v", err)
+	}
+	owner, ok := dto.(PulseOwnerUsageDTO)
 	if !ok {
-		return nil, ErrAccountNotFound
+		t.Fatalf("GetUsage() type = %T, want PulseOwnerUsageDTO", dto)
 	}
-	return account, nil
+	if owner.EffectiveBudgetUSD != 1000 || owner.GuestCapUSD != 660 || owner.OwnerCapUSD != 340 || owner.GuestDepletionUSD != 290 || owner.U7d != 0.7 {
+		t.Fatalf("owner quota fields = %#v, want real quota values", owner)
+	}
+	if owner.SevenDay == nil || owner.SevenDay.Utilization != 70 || owner.TokenStats == nil || owner.TokenStats.CacheTokens != 25 {
+		t.Fatalf("owner usage/token stats = %#v", owner)
+	}
 }
 
-func (r *pulseAccountRepoStub) ListWithFilters(_ context.Context, params pagination.PaginationParams, platform, accountType, _ string, _ string, _ int64, _ string) ([]Account, *pagination.PaginationResult, error) {
-	r.listWithFiltersOK = true
-	r.lastPlatform = platform
-	r.lastAccountType = accountType
-	r.lastPageSize = params.PageSize
-	return r.listWithFilters, &pagination.PaginationResult{Total: int64(len(r.listWithFilters))}, nil
-}
-
-func TestPulseService_ExplicitAccountIDResolvesThatAccount(t *testing.T) {
-	t.Parallel()
-
-	repo := &pulseAccountRepoStub{
-		accounts: map[int64]*Account{
-			42: {ID: 42, Name: "primary", Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+func TestPulseGuestResponseUsesScaledGauge(t *testing.T) {
+	// Given
+	resetAt := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	svc := newPulseServiceWithDependencies(
+		&config.Config{},
+		PulseServiceDependencies{
+			AccountUsage: &pulseAccountUsageFake{passiveUsage: &UsageInfo{Source: "passive", SevenDay: &UsageProgress{ResetsAt: &resetAt, RemainingSeconds: 3600}}},
+			Quota:        &pulseQuotaSnapshotFake{snapshot: &QuotaSnapshot{GuestCapUSD: 660, GuestDepletionUSD: 330, ResetsAt: &resetAt, RemainingSeconds: 3600}},
+			UsageStats:   &pulseUsageStatsFake{guestStats: GuestOwnStats{RequestCount: 3, InputTokens: 100, OutputTokens: 50}},
 		},
-	}
-	svc := NewPulseService(&config.Config{Pulse: config.PulseConfig{AccountID: 42}}, repo, nil)
+	)
+	identity := &config.PulseAccessTokenConfig{Role: config.PulseAccessRoleGuest, AccountID: 9, APIKeyID: 23, Label: "guest-c"}
 
-	account, err := svc.resolveAccount(context.Background())
+	// When
+	dto, err := svc.GetUsage(context.Background(), identity, false)
+
+	// Then
 	if err != nil {
-		t.Fatalf("resolveAccount() error = %v", err)
+		t.Fatalf("GetUsage() error = %v", err)
 	}
-	if account.ID != 42 {
-		t.Fatalf("resolveAccount() ID = %d, want 42", account.ID)
+	guest, ok := dto.(PulseGuestUsageDTO)
+	if !ok {
+		t.Fatalf("GetUsage() type = %T, want PulseGuestUsageDTO", dto)
 	}
-	if repo.listWithFiltersOK {
-		t.Fatal("explicit account_id must not list accounts")
+	if guest.WeeklyUsedPercent != 50 || guest.WeeklyRemainingPercent != 50 {
+		t.Fatalf("weekly percents = %d/%d, want 50/50", guest.WeeklyUsedPercent, guest.WeeklyRemainingPercent)
 	}
 }
 
-func TestPulseService_AutoPicksExactlyOneAnthropicOAuthAccount(t *testing.T) {
-	t.Parallel()
-
-	repo := &pulseAccountRepoStub{
-		listWithFilters: []Account{
-			{ID: 7, Name: "solo", Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+func TestPulseGuestResponseOmitsSensitive(t *testing.T) {
+	// Given
+	resetAt := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	svc := newPulseServiceWithDependencies(
+		&config.Config{},
+		PulseServiceDependencies{
+			AccountUsage: &pulseAccountUsageFake{passiveUsage: &UsageInfo{Source: "passive", SevenDay: &UsageProgress{Utilization: 70, ResetsAt: &resetAt, RemainingSeconds: 3600}}},
+			Quota:        &pulseQuotaSnapshotFake{snapshot: &QuotaSnapshot{EffectiveBudgetUSD: 1000, GuestCapUSD: 660, OwnerCapUSD: 340, GuestDepletionUSD: 330, OwnerOverflowUSD: 60, U7d: 0.7, ResetsAt: &resetAt, RemainingSeconds: 3600}},
+			UsageStats:   &pulseUsageStatsFake{accountStats: &usagestats.UsageStats{TotalCacheTokens: 999}, guestStats: GuestOwnStats{RequestCount: 3, InputTokens: 100, OutputTokens: 50}},
 		},
-	}
-	svc := NewPulseService(&config.Config{}, repo, nil)
+	)
+	identity := &config.PulseAccessTokenConfig{Role: config.PulseAccessRoleGuest, AccountID: 9, APIKeyID: 23, Label: "guest-c"}
 
-	account, err := svc.resolveAccount(context.Background())
+	// When
+	dto, err := svc.GetUsage(context.Background(), identity, false)
 	if err != nil {
-		t.Fatalf("resolveAccount() error = %v", err)
+		t.Fatalf("GetUsage() error = %v", err)
 	}
-	if account.ID != 7 {
-		t.Fatalf("resolveAccount() ID = %d, want 7", account.ID)
+	body, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal guest dto: %v", err)
 	}
-	if repo.lastPlatform != PlatformAnthropic {
-		t.Fatalf("ListWithFilters platform = %q, want %q", repo.lastPlatform, PlatformAnthropic)
+
+	// Then
+	lowerJSON := strings.ToLower(string(body))
+	for _, forbidden := range []string{"usd", "budget", "cost", "cache", "utilization", "u7d", "owner", "effective", "cap", "depletion"} {
+		if strings.Contains(lowerJSON, forbidden) {
+			t.Fatalf("guest DTO leaked %q in %s", forbidden, string(body))
+		}
 	}
-	if repo.lastAccountType != "" {
-		t.Fatalf("ListWithFilters accountType = %q, want empty before helper filtering", repo.lastAccountType)
-	}
-	if repo.lastPageSize != 1000 {
-		t.Fatalf("ListWithFilters page size = %d, want 1000", repo.lastPageSize)
+	for _, required := range []string{"weekly_used_percent", "input_tokens", "output_tokens", "request_count"} {
+		if !strings.Contains(lowerJSON, required) {
+			t.Fatalf("guest DTO missing %q in %s", required, string(body))
+		}
 	}
 }
 
-func TestPulseService_AutoPickNoAccountsErrors(t *testing.T) {
-	t.Parallel()
-
-	svc := NewPulseService(&config.Config{}, &pulseAccountRepoStub{}, nil)
-
-	_, err := svc.resolveAccount(context.Background())
-	if err == nil {
-		t.Fatal("resolveAccount() expected error")
-	}
-	if !strings.Contains(err.Error(), "Anthropic OAuth") {
-		t.Fatalf("resolveAccount() error = %q, want Anthropic OAuth hint", err.Error())
-	}
-}
-
-func TestPulseService_AutoPickMultipleAccountsRequiresConfig(t *testing.T) {
-	t.Parallel()
-
-	repo := &pulseAccountRepoStub{
-		listWithFilters: []Account{
-			{ID: 1, Name: "first", Platform: PlatformAnthropic, Type: AccountTypeOAuth},
-			{ID: 2, Name: "second", Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+func TestPulseGuestRefreshActiveNotAllowed(t *testing.T) {
+	// Given
+	resetAt := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+	accountUsage := &pulseAccountUsageFake{passiveUsage: &UsageInfo{Source: "passive"}, activeUsage: &UsageInfo{Source: "active"}}
+	svc := newPulseServiceWithDependencies(
+		&config.Config{},
+		PulseServiceDependencies{
+			AccountUsage: accountUsage,
+			Quota:        &pulseQuotaSnapshotFake{snapshot: &QuotaSnapshot{GuestCapUSD: 660, GuestDepletionUSD: 330, ResetsAt: &resetAt, RemainingSeconds: 3600}},
+			UsageStats:   &pulseUsageStatsFake{guestStats: GuestOwnStats{RequestCount: 3}},
 		},
-	}
-	svc := NewPulseService(&config.Config{}, repo, nil)
+	)
+	identity := &config.PulseAccessTokenConfig{Role: config.PulseAccessRoleGuest, AccountID: 9, APIKeyID: 23, Label: "guest-c"}
 
-	_, err := svc.resolveAccount(context.Background())
-	if err == nil {
-		t.Fatal("resolveAccount() expected error")
+	// When
+	_, err := svc.GetUsage(context.Background(), identity, true)
+
+	// Then
+	if err != nil {
+		t.Fatalf("GetUsage() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "PULSE_ACCOUNT_ID") {
-		t.Fatalf("resolveAccount() error = %q, want PULSE_ACCOUNT_ID hint", err.Error())
+	if accountUsage.activeCallCount != 0 {
+		t.Fatalf("activeCallCount = %d, want 0 for guest refresh", accountUsage.activeCallCount)
 	}
 }

@@ -1956,6 +1956,49 @@ func (r *usageLogRepository) GetAccountStatsAggregated(ctx context.Context, acco
 	return &stats, nil
 }
 
+func (r *usageLogRepository) SumActualCostByAPIKeyIDs(ctx context.Context, accountID int64, apiKeyIDs []int64, startTime, endTime time.Time) (float64, error) {
+	if len(apiKeyIDs) == 0 {
+		return 0, nil
+	}
+
+	query := `
+		SELECT COALESCE(SUM(actual_cost), 0) FROM usage_logs
+		WHERE account_id = $1 AND api_key_id = ANY($2) AND created_at >= $3 AND created_at < $4
+	`
+
+	var actualCost float64
+	if err := scanSingleRow(ctx, r.sql, query, []any{accountID, pq.Array(apiKeyIDs), startTime, endTime}, &actualCost); err != nil {
+		return 0, err
+	}
+	return actualCost, nil
+}
+
+func (r *usageLogRepository) SumAccountActualCost(ctx context.Context, accountID int64, startTime, endTime time.Time) (float64, error) {
+	query := `
+		SELECT COALESCE(SUM(actual_cost), 0) FROM usage_logs
+		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+	`
+
+	var actualCost float64
+	if err := scanSingleRow(ctx, r.sql, query, []any{accountID, startTime, endTime}, &actualCost); err != nil {
+		return 0, err
+	}
+	return actualCost, nil
+}
+
+func (r *usageLogRepository) GuestOwnWindowStats(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (service.GuestOwnStats, error) {
+	query := `
+		SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0) FROM usage_logs
+		WHERE api_key_id = $1 AND created_at >= $2 AND created_at < $3
+	`
+
+	var stats service.GuestOwnStats
+	if err := scanSingleRow(ctx, r.sql, query, []any{apiKeyID, startTime, endTime}, &stats.RequestCount, &stats.InputTokens, &stats.OutputTokens); err != nil {
+		return service.GuestOwnStats{}, err
+	}
+	return stats, nil
+}
+
 // GetModelStatsAggregated 使用 SQL 聚合统计模型使用数据
 // 性能优化：数据库层聚合计算，避免应用层循环统计
 func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
